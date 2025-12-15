@@ -1,0 +1,7 @@
+Fetching http://localhost:8000/api/stats/BTC/15m...
+
+--- API Response (BTC 15m) ---
+Current Streak: {'type': 'red', 'length': 2}
+Next Close Time: 2025-12-12 01:00:00
+Current Price: 92997.01000000001
+Candle Open: 93188.18

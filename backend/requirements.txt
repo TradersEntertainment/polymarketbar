@@ -1,0 +1,7 @@
+fastapi
+uvicorn
+ccxt
+pandas
+numpy
+pydantic
+python-dotenv

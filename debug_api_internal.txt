@@ -1,0 +1,12 @@
+Fetching http://localhost:8000/api/stats/BTC/15m...
+
+--- API Response (BTC 15m) ---
+Current Streak: {'type': 'red', 'length': 2}
+Current Price: 92942.85500000001
+
+Last 5 Candles (Internal):
+Time: 2025-12-11 20:45:00+00:00 | Open: 91580.785 | Close: 91800.505 | Color: green
+Time: 2025-12-11 21:00:00+00:00 | Open: 91800.5 | Close: 92468.07 | Color: green
+Time: 2025-12-11 21:15:00+00:00 | Open: 92468.075 | Close: 93279.795 | Color: green
+Time: 2025-12-11 21:30:00+00:00 | Open: 93289.78 | Close: 93186.88 | Color: red
+Time: 2025-12-11 21:45:00+00:00 | Open: 93188.18 | Close: 92942.85500000001 | Color: red
