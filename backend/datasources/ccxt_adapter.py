@@ -35,6 +35,9 @@ class CCXTAdapter(DataAdapter):
         # Concurrency Lock
         self.update_lock = asyncio.Lock()
         
+        # Throttling
+        self.last_update: Dict[str, float] = {}
+        
         self.load_cache()
 
     def load_cache(self):
@@ -43,6 +46,9 @@ class CCXTAdapter(DataAdapter):
                 import pickle
                 with open(self.CACHE_FILE, 'rb') as f:
                     self.cache = pickle.load(f)
+                
+                # Reset throttling timers on load to ensure we fetch fresh data immediately on startup
+                self.last_update = {} 
                 logger.info(f"Loaded persist cache from {self.CACHE_FILE}. Keys: {list(self.cache.keys())}")
             except Exception as e:
                 logger.error(f"Failed to load cache: {e}")
@@ -161,9 +167,16 @@ class CCXTAdapter(DataAdapter):
         
         # Use simple locking to prevent thundering herd
         async with self.update_lock:
+            # Throttling/Cooldown: Don't hit API if updated recently (e.g. 10s)
+            import time
+            now = time.time()
+            last_ts = self.last_update.get(key, 0)
+            if now - last_ts < 10.0:
+                 # Cache is fresh enough
+                 return
+
             # Check cache again inside lock (Double-Check Pattern)
             if key in self.cache and timeframe not in ['4h', '1d']:
-                # Basic staleness check could go here, but for now we rely on the caller/timer
                 pass
 
             current_df = self.cache.get(key)
@@ -171,39 +184,42 @@ class CCXTAdapter(DataAdapter):
             try:
                 # Case 1: Updating existing cache (Fast)
                 if current_df is not None and not current_df.empty:
-                last_ts = current_df.index[-1].value // 10**6
-                # Fetch only new data
-                new_data = await self._fetch_aggregated_ohlcv(symbol, timeframe, limit=100, since=last_ts)
-                
-                if new_data.empty:
-                    if timeframe == '1h': self._update_derived_cache(symbol)
-                    return
+                    last_ts_val = current_df.index[-1].value // 10**6
+                    # Fetch only new data
+                    new_data = await self._fetch_aggregated_ohlcv(symbol, timeframe, limit=100, since=last_ts_val)
+                    
+                    if new_data.empty:
+                        self.last_update[key] = now  # Mark check as done even if empty
+                        if timeframe == '1h': self._update_derived_cache(symbol)
+                        return
 
-                combined = pd.concat([current_df, new_data])
-                combined = combined[~combined.index.duplicated(keep='last')]
-                combined.sort_index(inplace=True)
-                
-                # Keep up to 10,000 candles
-                if len(combined) > 10000:
-                    combined = combined.iloc[-10000:]
-                
-                self.cache[key] = combined
-                logger.info(f"Updated cache for {key}. New total: {len(combined)}")
+                    combined = pd.concat([current_df, new_data])
+                    combined = combined[~combined.index.duplicated(keep='last')]
+                    combined.sort_index(inplace=True)
+                    
+                    # Keep up to 10,000 candles
+                    if len(combined) > 10000:
+                        combined = combined.iloc[-10000:]
+                    
+                    self.cache[key] = combined
+                    self.last_update[key] = now
+                    logger.info(f"Updated cache for {key}. New total: {len(combined)}")
 
-            # Case 2: Initial Deep Fetch (DISABLED FOR DEBUGGING/STABILITY)
-            else:
-                 # Standard fetch for new cache
-                 logger.info(f"Initializing cache for {key} (Standard fetch)...")
-                 new_data = await self._fetch_aggregated_ohlcv(symbol, timeframe, limit=1000)
-                 if not new_data.empty:
-                     self.cache[key] = new_data
-                     
-            # Trigger derived cache update if we just updated 1h
-            if timeframe == '1h':
-                self._update_derived_cache(symbol)
-                
-        except Exception as e:
-            logger.error(f"Failed to update cache for {key}: {e}")
+                # Case 2: Initial Deep Fetch (DISABLED FOR DEBUGGING/STABILITY)
+                else:
+                     # Standard fetch for new cache
+                     logger.info(f"Initializing cache for {key} (Standard fetch)...")
+                     new_data = await self._fetch_aggregated_ohlcv(symbol, timeframe, limit=1000)
+                     if not new_data.empty:
+                         self.cache[key] = new_data
+                         self.last_update[key] = now
+                         
+                # Trigger derived cache update if we just updated 1h
+                if timeframe == '1h':
+                    self._update_derived_cache(symbol)
+                    
+            except Exception as e:
+                logger.error(f"Failed to update cache for {key}: {e}")
 
     def _update_derived_cache(self, symbol: str):
         """
