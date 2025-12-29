@@ -129,36 +129,80 @@ class CCXTAdapter(DataAdapter):
         key = f"{symbol}_{timeframe}"
         current_df = self.cache.get(key)
         
-        since = None
-        limit = 1000
-        
-        if current_df is not None and not current_df.empty:
-            last_ts = current_df.index[-1].value // 10**6
-            since = last_ts
-            limit = 100
-            
         try:
-            new_data = await self._fetch_aggregated_ohlcv(symbol, timeframe, limit=limit, since=since)
-            
-            if new_data.empty:
-                # Even if no new data, we might need to ensure 4h/1d cache exists if it's missing
-                if timeframe == '1h':
-                    self._update_derived_cache(symbol)
-                return
+            # Case 1: Updating existing cache (Fast)
+            if current_df is not None and not current_df.empty:
+                last_ts = current_df.index[-1].value // 10**6
+                # Fetch only new data
+                new_data = await self._fetch_aggregated_ohlcv(symbol, timeframe, limit=100, since=last_ts)
+                
+                if new_data.empty:
+                    if timeframe == '1h': self._update_derived_cache(symbol)
+                    return
 
-            if current_df is None or current_df.empty:
-                self.cache[key] = new_data
-                logger.info(f"Initialized cache for {key} with {len(new_data)} candles")
-            else:
                 combined = pd.concat([current_df, new_data])
                 combined = combined[~combined.index.duplicated(keep='last')]
                 combined.sort_index(inplace=True)
-                if len(combined) > 2000:
-                    combined = combined.iloc[-2000:]
+                
+                # Keep up to 10,000 candles
+                if len(combined) > 10000:
+                    combined = combined.iloc[-10000:]
                 
                 self.cache[key] = combined
                 logger.info(f"Updated cache for {key}. New total: {len(combined)}")
-            
+
+            # Case 2: Initial Deep Fetch (Slow, run once)
+            else:
+                logger.info(f"Performing initial DEEP fetch for {key} (Target: ~4000 candles)...")
+                
+                # Calculate approx start time for 4000 candles
+                # 15m * 4000 = 60,000 min = 1000 hrs = ~41 days
+                import time
+                
+                tf_ms = 0
+                if timeframe.endswith('m'): tf_ms = int(timeframe[:-1]) * 60 * 1000
+                elif timeframe.endswith('h'): tf_ms = int(timeframe[:-1]) * 60 * 60 * 1000
+                elif timeframe.endswith('d'): tf_ms = int(timeframe[:-1]) * 24 * 60 * 60 * 1000
+                
+                now_ms = int(time.time() * 1000)
+                # Fetch 4000 candles back
+                start_ts = now_ms - (4000 * tf_ms)
+                
+                all_dfs = []
+                current_since = start_ts
+                
+                # Fetch in batches until we reach near present
+                while True:
+                    # Log removed to reduce noise, or keep debug
+                    # logger.info(f"Deep fetch {key} since {current_since}")
+                    batch = await self._fetch_aggregated_ohlcv(symbol, timeframe, limit=1000, since=current_since)
+                    
+                    if batch.empty:
+                        break
+                        
+                    all_dfs.append(batch)
+                    last_batch_ts = batch.index[-1].value // 10**6
+                    
+                    # If last candle is consistent with now (within 2 candles duration), stop
+                    if (now_ms - last_batch_ts) < (2 * tf_ms):
+                        break
+                        
+                    # Next batch starts after last candle
+                    current_since = last_batch_ts + 1
+                    
+                    # Safety break if we aren't moving forward
+                    if len(batch) < 2:
+                        break
+                        
+                if all_dfs:
+                    combined = pd.concat(all_dfs)
+                    combined = combined[~combined.index.duplicated(keep='last')]
+                    combined.sort_index(inplace=True)
+                    self.cache[key] = combined
+                    logger.info(f"Initialized Deep Cache for {key}: {len(combined)} candles.")
+                else:
+                    logger.warning(f"Deep fetch returned no data for {key}")
+
             # Trigger derived cache update if we just updated 1h
             if timeframe == '1h':
                 self._update_derived_cache(symbol)

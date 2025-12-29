@@ -18,8 +18,8 @@ class Analyzer:
         return 0
 
     async def get_stats(self, symbol: str, timeframe: str):
-        # Reduce limit to 500 to avoid timeouts/rate limits during high concurrency
-        df = await self.adapter.fetch_ohlcv(symbol, timeframe, limit=500)
+        # Request more data (5000 candles) to ensure accurate streak history
+        df = await self.adapter.fetch_ohlcv(symbol, timeframe, limit=5000)
         if df.empty:
             return None
 
