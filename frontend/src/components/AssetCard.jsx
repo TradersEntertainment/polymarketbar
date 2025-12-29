@@ -5,11 +5,11 @@ import LiveCandleWidget from './LiveCandleWidget';
 import { motion } from 'framer-motion';
 
 const MiniMetric = ({ label, value, icon: Icon, color }) => (
-    <div className="flex flex-col items-center bg-slate-900/50 p-2 rounded-lg border border-slate-800/50">
-        <div className="flex items-center gap-1 text-[10px] text-slate-500 uppercase tracking-wider mb-1">
-            <Icon size={10} /> {label}
+    <div className="flex flex-col items-center bg-slate-900/50 p-1 md:p-2 rounded-lg border border-slate-800/50">
+        <div className="flex items-center gap-1 text-[8px] md:text-[10px] text-slate-500 uppercase tracking-wider mb-0.5 md:mb-1">
+            <Icon className="w-2.5 h-2.5 md:w-3 md:h-[10px]" /> <span className="hidden md:inline">{label}</span><span className="md:hidden">{label.split(' ')[0]}</span>
         </div>
-        <div className={`text-sm font-bold ${color}`}>{value}</div>
+        <div className={`text-xs md:text-sm font-bold ${color}`}>{value}</div>
     </div>
 );
 
@@ -31,20 +31,20 @@ const AssetCard = ({ data }) => {
             initial={{ opacity: 0, scale: 0.98 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.3 }}
-            className={`relative overflow-hidden rounded-2xl border ${borderColor} bg-surface p-5 shadow-xl ${shadowColor} hover:scale-[1.01] transition-transform duration-300 min-h-[550px] flex flex-col justify-between`}
+            className={`relative overflow-hidden rounded-xl md:rounded-2xl border ${borderColor} bg-surface p-2 md:p-5 shadow-xl ${shadowColor} hover:scale-[1.01] transition-transform duration-300 min-h-[350px] md:min-h-[550px] flex flex-col justify-between`}
         >
             {/* Header */}
             <div className="flex justify-between items-start mb-4">
                 <div>
-                    <h3 className="text-3xl font-black text-white flex items-center gap-2 tracking-tight">
+                    <h3 className="text-sm md:text-3xl font-black text-white flex flex-col md:flex-row md:items-center gap-1 md:gap-2 tracking-tight">
                         {symbol}
-                        <span className="text-xs font-bold text-slate-400 bg-slate-800/80 px-2 py-1 rounded-md border border-slate-700">{timeframe}</span>
+                        <span className="text-[10px] md:text-xs font-bold text-slate-400 bg-slate-800/80 px-1 md:px-2 py-0.5 md:py-1 rounded-md border border-slate-700 w-fit">{timeframe}</span>
                     </h3>
-                    <p className="text-slate-400 font-mono text-sm mt-1 opacity-80">${current_price.toLocaleString()}</p>
+                    <p className="text-slate-400 font-mono text-xs md:text-sm mt-0.5 opacity-80">${current_price.toLocaleString()}</p>
                 </div>
                 <div className={`flex flex-col items-end ${streakColor}`}>
-                    <div className="flex items-center gap-1 text-4xl font-black drop-shadow-lg">
-                        {isGreen ? <ArrowUp size={36} strokeWidth={3} /> : <ArrowDown size={36} strokeWidth={3} />}
+                    <div className="flex items-center gap-1 text-lg md:text-4xl font-black drop-shadow-lg">
+                        {isGreen ? <ArrowUp className="w-5 h-5 md:w-9 md:h-9" strokeWidth={3} /> : <ArrowDown className="w-5 h-5 md:w-9 md:h-9" strokeWidth={3} />}
                         {current_streak.length}
                     </div>
                     <span className={`text-[10px] font-bold tracking-widest uppercase opacity-90 bg-slate-900/50 px-2 py-0.5 rounded-full ${isGreen ? 'text-green-500' : 'text-red-500'}`}>

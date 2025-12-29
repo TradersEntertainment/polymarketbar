@@ -181,7 +181,7 @@ const Dashboard = () => {
 
 
     return (
-        <div className="min-h-screen bg-[#0b1121] bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-900 via-[#0b1121] to-black text-white p-6 md:p-10 font-sans selection:bg-blue-500/30">
+        <div className="min-h-screen bg-[#0b1121] bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-900 via-[#0b1121] to-black text-white p-2 md:p-10 font-sans selection:bg-blue-500/30">
 
             {/* Navbar / Header */}
             <header className="max-w-[1600px] mx-auto mb-12 flex flex-col md:flex-row justify-between items-center gap-8 relative z-10">
@@ -294,7 +294,7 @@ const Dashboard = () => {
                     </div>
                 )}
 
-                <div className={`grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-8 transition-opacity duration-300 ${loading ? 'opacity-20' : 'opacity-100'}`}>
+                <div className={`grid grid-cols-2 md:grid-cols-2 xl:grid-cols-4 gap-2 md:gap-8 transition-opacity duration-300 ${loading ? 'opacity-20' : 'opacity-100'}`}>
                     {ASSETS.map((asset) => (
                         <AssetCard key={asset} data={data[asset]} />
                     ))}
