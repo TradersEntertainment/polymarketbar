@@ -270,6 +270,8 @@ async def startup_event():
     for sym in symbols:
         # Fetch deep history to populate daily/4h charts robustly
         asyncio.create_task(analyzer.adapter.backfill_history(sym, '1h', days=180))
+        # Backfill 15m for 30 days (~2800 candles) for intraday history
+        asyncio.create_task(analyzer.adapter.backfill_history(sym, '15m', days=30))
 
 async def background_updater():
     """
