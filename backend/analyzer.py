@@ -137,23 +137,59 @@ class Analyzer:
 
         # Duration Calculation for Close Time
         # Robust Wall-Clock Calculation (Decoupled from data freshness)
+        # Polymarket uses US/Eastern Time alignment (Daily at Noon ET)
         import time
         now_ts = time.time()
-        duration_s = self._get_timeframe_ms(timeframe) / 1000
         
-        # Calculate next boundary
-        # For 15m (900s), 1h (3600s), 4h (14400s), 1d (86400s)
-        if duration_s > 0:
-             # Align to standard intervals
-             next_boundary = ((int(now_ts) // int(duration_s)) + 1) * int(duration_s)
-             close_time = next_boundary * 1000
-        else:
-             # Fallback
-             close_time = int(df.index[-1].timestamp() * 1000) + self._get_timeframe_ms(timeframe)
+        try:
+            now_et = pd.Timestamp.now(tz='US/Eastern')
+            
+            if timeframe == '1d':
+                # Target: Next Noon (12:00:00) ET
+                target = now_et.replace(hour=12, minute=0, second=0, microsecond=0)
+                if now_et >= target:
+                    target += pd.Timedelta(days=1)
+                close_time = int(target.timestamp() * 1000)
+                
+            elif timeframe == '4h':
+                # Target: Next 0, 4, 8, 12, 16, 20
+                current_hour = now_et.hour
+                # Find next multiple of 4
+                next_hour = (current_hour // 4 + 1) * 4
+                
+                target = now_et.replace(minute=0, second=0, microsecond=0)
+                if next_hour >= 24:
+                    target = target.replace(hour=0) + pd.Timedelta(days=1)
+                else:
+                    target = target.replace(hour=next_hour)
+                
+                close_time = int(target.timestamp() * 1000)
+                
+            else:
+                # 15m, 1h - These align cleanly with UTC standard logic
+                # 1h: Top of next hour
+                # 15m: Next 0, 15, 30, 45
+                duration_s = self._get_timeframe_ms(timeframe) / 1000
+                if duration_s > 0:
+                     next_boundary = ((int(now_ts) // int(duration_s)) + 1) * int(duration_s)
+                     close_time = next_boundary * 1000
+                else:
+                     close_time = int(df.index[-1].timestamp() * 1000) + self._get_timeframe_ms(timeframe)
+
+        except Exception as e:
+            # Fallback in case of timezone errors
+            print(f"Timezone calc error: {e}")
+            duration_s = self._get_timeframe_ms(timeframe) / 1000
+            if duration_s > 0:
+                 next_boundary = ((int(now_ts) // int(duration_s)) + 1) * int(duration_s)
+                 close_time = next_boundary * 1000
+            else:
+                 close_time = int(df.index[-1].timestamp() * 1000) + self._get_timeframe_ms(timeframe)
 
         # Check for staleness (if data is older than 2x timeframe)
         last_data_ts = df.index[-1].timestamp()
-        is_stale = (now_ts - last_data_ts) > (duration_s * 2)
+        duration_s = self._get_timeframe_ms(timeframe) / 1000
+        is_stale = (now_ts - last_data_ts) > (duration_s * 2) if duration_s > 0 else False
 
         return {
             "symbol": symbol,
