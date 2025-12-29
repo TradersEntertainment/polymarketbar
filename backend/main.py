@@ -311,7 +311,7 @@ frontend_dist = current_dir.parent / "frontend" / "dist"
 if frontend_dist.exists():
     app.mount("/assets", StaticFiles(directory=str(frontend_dist / "assets")), name="assets")
     
-    @app.get("/{full_path:path}")
+    @app.api_route("/{full_path:path}", methods=["GET", "HEAD"])
     async def catch_all(full_path: str):
         # Allow API routes to pass through
         if full_path.startswith("api"):
