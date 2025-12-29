@@ -198,6 +198,12 @@ async def update_settings(
     # Reset history on significant change? Maybe not.
     return RedirectResponse(url="/", status_code=303)
 
+@app.post("/test-alert")
+async def test_alert():
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        await send_telegram_alert(client, "TEST", "1m", "up", 999, 420.69)
+    return RedirectResponse(url="/", status_code=303)
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8001)
