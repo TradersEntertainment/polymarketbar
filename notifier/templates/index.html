@@ -84,6 +84,13 @@
 
         </form>
 
+        <form action="/test-alert" method="POST" class="px-6 pb-4">
+            <button type="submit"
+                class="w-full bg-purple-600 hover:bg-purple-500 text-white font-bold py-3 rounded-lg shadow-lg shadow-purple-500/20 transition transform active:scale-95 flex justify-center items-center gap-2">
+                🚀 Send Test Signal
+            </button>
+        </form>
+
         <div class="bg-black/20 p-4 text-center text-xs text-slate-500">
             Active Alerts Tracking: <span class="text-slate-300 font-mono">{{ alert_count }}</span>
         </div>
