@@ -201,8 +201,8 @@ class CCXTAdapter(DataAdapter):
         if not aggregated.empty:
             last_close = aggregated['close'].iloc[-1]
             # logger.info(f"Aggregated {timeframe} candle for {symbol}: {last_close} (from {len(dfs)} exchanges)")
-            if last_close > 100000 and symbol == 'BTC':
-                 logger.error(f"ANOMALY DETECTED: BTC price {last_close} > 100k! Data breakdown: {[d['close'].iloc[-1] for d in dfs]}")
+            if last_close > 250000 and symbol == 'BTC':
+                 logger.error(f"ANOMALY DETECTED: BTC price {last_close} > 250k! Data breakdown: {[d['close'].iloc[-1] for d in dfs]}")
 
         return aggregated.sort_index()
 
