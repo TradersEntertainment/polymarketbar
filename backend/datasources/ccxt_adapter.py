@@ -146,7 +146,7 @@ class CCXTAdapter(DataAdapter):
         # Ensure sorted
         df_et = df_et.sort_index()
 
-        # Resample
+        # Strategy 1: Strict Noon ET (Preferred)
         try:
             resampled = df_et.resample(rule, origin=origin).agg({
                 'open': 'first',
@@ -155,11 +155,34 @@ class CCXTAdapter(DataAdapter):
                 'close': 'last',
                 'volume': 'sum'
             })
-            # Drop NaN rows (incomplete bins might produce them)
-            return resampled.dropna()
+            # Check if valid
+            clean = resampled.dropna()
+            if not clean.empty:
+                return clean
+            else:
+                logger.warning(f"Strategy 1 (Strict) returned empty for {timeframe}. Trying fallback...")
         except Exception as e:
-            logger.error(f"Resample failed for {timeframe}: {e}")
-            return pd.DataFrame()
+            logger.error(f"Strategy 1 failed for {timeframe}: {e}")
+
+        # Strategy 2: Simple/Standard Resampling (Fallback)
+        # Just use standard daily/4h without custom origin if the above fails
+        try:
+            fallback_rule = '1D' if timeframe == '1d' else '4h'
+            fallback = df_et.resample(fallback_rule).agg({
+                'open': 'first',
+                'high': 'max',
+                'low': 'min',
+                'close': 'last',
+                'volume': 'sum'
+            })
+            clean_fallback = fallback.dropna()
+            if not clean_fallback.empty:
+                logger.info(f"Strategy 2 (Fallback) succeeded for {timeframe}.")
+                return clean_fallback
+        except Exception as e:
+             logger.error(f"Strategy 2 failed for {timeframe}: {e}")
+
+        return pd.DataFrame()
 
     async def update_cache(self, symbol: str, timeframe: str):
         # If 4h/1d requested, we redirect to 1h update
