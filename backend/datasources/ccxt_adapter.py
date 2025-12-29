@@ -151,58 +151,14 @@ class CCXTAdapter(DataAdapter):
                 self.cache[key] = combined
                 logger.info(f"Updated cache for {key}. New total: {len(combined)}")
 
-            # Case 2: Initial Deep Fetch (Slow, run once)
+            # Case 2: Initial Deep Fetch (DISABLED FOR DEBUGGING/STABILITY)
             else:
-                logger.info(f"Performing initial DEEP fetch for {key} (Target: ~4000 candles)...")
-                
-                # Calculate approx start time for 4000 candles
-                # 15m * 4000 = 60,000 min = 1000 hrs = ~41 days
-                import time
-                
-                tf_ms = 0
-                if timeframe.endswith('m'): tf_ms = int(timeframe[:-1]) * 60 * 1000
-                elif timeframe.endswith('h'): tf_ms = int(timeframe[:-1]) * 60 * 60 * 1000
-                elif timeframe.endswith('d'): tf_ms = int(timeframe[:-1]) * 24 * 60 * 60 * 1000
-                
-                now_ms = int(time.time() * 1000)
-                # Fetch 4000 candles back
-                start_ts = now_ms - (4000 * tf_ms)
-                
-                all_dfs = []
-                current_since = start_ts
-                
-                # Fetch in batches until we reach near present
-                while True:
-                    # Log removed to reduce noise, or keep debug
-                    # logger.info(f"Deep fetch {key} since {current_since}")
-                    batch = await self._fetch_aggregated_ohlcv(symbol, timeframe, limit=1000, since=current_since)
-                    
-                    if batch.empty:
-                        break
-                        
-                    all_dfs.append(batch)
-                    last_batch_ts = batch.index[-1].value // 10**6
-                    
-                    # If last candle is consistent with now (within 2 candles duration), stop
-                    if (now_ms - last_batch_ts) < (2 * tf_ms):
-                        break
-                        
-                    # Next batch starts after last candle
-                    current_since = last_batch_ts + 1
-                    
-                    # Safety break if we aren't moving forward
-                    if len(batch) < 2:
-                        break
-                        
-                if all_dfs:
-                    combined = pd.concat(all_dfs)
-                    combined = combined[~combined.index.duplicated(keep='last')]
-                    combined.sort_index(inplace=True)
-                    self.cache[key] = combined
-                    logger.info(f"Initialized Deep Cache for {key}: {len(combined)} candles.")
-                else:
-                    logger.warning(f"Deep fetch returned no data for {key}")
-
+                 # Standard fetch for new cache
+                 logger.info(f"Initializing cache for {key} (Standard fetch)...")
+                 new_data = await self._fetch_aggregated_ohlcv(symbol, timeframe, limit=1000)
+                 if not new_data.empty:
+                     self.cache[key] = new_data
+                     
             # Trigger derived cache update if we just updated 1h
             if timeframe == '1h':
                 self._update_derived_cache(symbol)
@@ -242,6 +198,12 @@ class CCXTAdapter(DataAdapter):
         # Group by index (timestamp) and take median
         aggregated = all_data.groupby(all_data.index).median()
         
+        if not aggregated.empty:
+            last_close = aggregated['close'].iloc[-1]
+            # logger.info(f"Aggregated {timeframe} candle for {symbol}: {last_close} (from {len(dfs)} exchanges)")
+            if last_close > 100000 and symbol == 'BTC':
+                 logger.error(f"ANOMALY DETECTED: BTC price {last_close} > 100k! Data breakdown: {[d['close'].iloc[-1] for d in dfs]}")
+
         return aggregated.sort_index()
 
     async def _fetch_full_ohlcv(self, exchange, symbol: str, timeframe: str, limit: int, since: Optional[int] = None) -> pd.DataFrame:
