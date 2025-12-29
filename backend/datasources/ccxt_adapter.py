@@ -5,6 +5,7 @@ import numpy as np
 from typing import List, Dict, Optional
 from .adapter_base import DataAdapter
 import logging
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +27,36 @@ class CCXTAdapter(DataAdapter):
         self.cache: Dict[str, pd.DataFrame] = {}
         # Short-term price cache: { "SYMBOL": (price, timestamp) }
         self.price_cache: Dict[str, tuple] = {}
+        
+        # Persistence
+        self.DATA_DIR = "/data" if os.path.exists("/data") else "." 
+        self.CACHE_FILE = os.path.join(self.DATA_DIR, "ohlcv_cache.pkl")
+        
+        self.load_cache()
+
+    def load_cache(self):
+        if os.path.exists(self.CACHE_FILE):
+            try:
+                import pickle
+                with open(self.CACHE_FILE, 'rb') as f:
+                    self.cache = pickle.load(f)
+                logger.info(f"Loaded persist cache from {self.CACHE_FILE}. Keys: {list(self.cache.keys())}")
+            except Exception as e:
+                logger.error(f"Failed to load cache: {e}")
+        else:
+            logger.info("No persistent cache found. Starting fresh.")
+
+    def save_cache(self):
+        try:
+            import pickle
+            # Create temp file then rename for atomic write
+            temp_file = self.CACHE_FILE + ".tmp"
+            with open(temp_file, 'wb') as f:
+                pickle.dump(self.cache, f)
+            os.replace(temp_file, self.CACHE_FILE)
+            logger.info(f"Saved cache to {self.CACHE_FILE}")
+        except Exception as e:
+            logger.error(f"Failed to save cache: {e}")
 
     async def close(self):
         for exchange in self.exchanges:

@@ -50,6 +50,10 @@ async def startup():
 
 @app.on_event("shutdown")
 async def shutdown():
+    # Save cache before exiting
+    if analyzer and analyzer.adapter:
+        analyzer.adapter.save_cache()
+    
     await analyzer.close()
     if http_client:
         await http_client.aclose()
@@ -256,8 +260,18 @@ async def background_updater():
     last_restart_time = time.time()
     RESTART_INTERVAL = 6 * 60 * 60  # 6 hours
     MAX_CONSECUTIVE_ERRORS = 3
+    SAVE_INTERVAL = 5 * 60  # 5 minutes
+    last_save_time = time.time()
     
     while True:
+        # Periodic Save
+        if time.time() - last_save_time > SAVE_INTERVAL:
+            try:
+                analyzer.adapter.save_cache()
+                last_save_time = time.time()
+            except Exception as e:
+                logger.error(f"Background save failed: {e}")
+
         # Periodic proactive restart
         if time.time() - last_restart_time > RESTART_INTERVAL:
             logger.info("Performing scheduled restart of adapters...")
