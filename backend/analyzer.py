@@ -213,9 +213,9 @@ class Analyzer:
             },
             "smart_trading": {
                 "microtrends": {
-                    "1m": "up" if df['close'].iloc[-1] > df['open'].iloc[-1] else "down", # Simple proxy
-                    "5m": "up" if df['close'].iloc[-1] > df['close'].iloc[-5] else "down" if len(df) > 5 else "flat",
-                    "15m": "up" if df['close'].iloc[-1] > df['close'].iloc[-15] else "down" if len(df) > 15 else "flat"
+                    "1m": "up" if df['close'].iloc[-1] > df['open'].iloc[-1] else "down",
+                    "5m": ("up" if df['close'].iloc[-1] > df['close'].iloc[-5] else "down") if len(df) > 5 else "flat",
+                    "15m": ("up" if df['close'].iloc[-1] > df['close'].iloc[-15] else "down") if len(df) > 15 else "flat"
                 },
                 "spread": round(volatility * 0.05, 4), # Simulated spread based on vol
                 "slippage": round(volatility * 0.02, 4),
