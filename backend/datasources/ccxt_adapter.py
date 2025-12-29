@@ -131,18 +131,21 @@ class CCXTAdapter(DataAdapter):
         
         if timeframe == '1d':
             # Daily closes at 12:00 PM (Noon) ET.
-            # Using offset is deprecated in new pandas but often reliable for simple shifts.
-            # However, origin is better. 12:00 PM = 12h offset from midnight.
-            origin = midnight_et + pd.Timedelta(hours=12)
+            # Origin at 12:00 PM ensures bins are 12:00 -> 12:00.
+            # We use a fixed recent origin.
+            origin = pd.Timestamp("2024-01-01 12:00:00").tz_localize("US/Eastern")
             rule = '24h'
         elif timeframe == '4h':
             # 4h candles align to 00, 04, 08...
-            origin = midnight_et
+            origin = pd.Timestamp("2024-01-01 00:00:00").tz_localize("US/Eastern")
             rule = '4h'
         else:
-            origin = midnight_et
+            origin = pd.Timestamp("2024-01-01 00:00:00").tz_localize("US/Eastern")
             rule = timeframe
         
+        # Ensure sorted
+        df_et = df_et.sort_index()
+
         # Resample
         try:
             resampled = df_et.resample(rule, origin=origin).agg({
@@ -152,6 +155,7 @@ class CCXTAdapter(DataAdapter):
                 'close': 'last',
                 'volume': 'sum'
             })
+            # Drop NaN rows (incomplete bins might produce them)
             return resampled.dropna()
         except Exception as e:
             logger.error(f"Resample failed for {timeframe}: {e}")
