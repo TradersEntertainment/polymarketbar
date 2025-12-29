@@ -9,8 +9,17 @@ import os
 from .analyzer import Analyzer
 from .live_stats import LiveStats
 from .datasources.ccxt_adapter import CCXTAdapter
+from .notification import TelegramNotifier
+from dotenv import load_dotenv
+
+# Load env vars
+load_dotenv()
 
 app = FastAPI(title="Polymarket Stats API")
+
+# Initialize Analyzer & Notifier
+analyzer = Analyzer()
+notifier = TelegramNotifier()
 
 # CORS
 app.add_middleware(
@@ -308,6 +317,21 @@ async def background_updater():
                 for timeframe in timeframes:
                     # This will fetch new data and update the cache
                     await analyzer.adapter.update_cache(symbol, timeframe)
+                    
+                    # Check for Alerts
+                    try:
+                        stats = await analyzer.get_stats(symbol, timeframe)
+                        if stats:
+                            await notifier.check_and_alert(
+                                symbol, 
+                                timeframe, 
+                                stats['streak_type'], 
+                                stats['streak_count'], 
+                                stats['price']
+                            )
+                    except Exception as e:
+                        logger.error(f"Alert check failed for {symbol} {timeframe}: {e}")
+
                     # Small sleep to avoid hitting rate limits too hard in a burst but keep it snappy
                     await asyncio.sleep(0.1) 
             
