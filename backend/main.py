@@ -213,22 +213,31 @@ async def get_live(symbol: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/history/{symbol}/{timeframe}")
-async def get_history(symbol: str, timeframe: str):
+async def get_history(symbol: str, timeframe: str, limit: int = 2000):
     """
-    Get OHLCV history for a symbol.
+    Get OHLCV history for a symbol. Optimized for speed.
     """
     try:
         # Use CCXT adapter directly
-        ohlcv = await analyzer.adapter.fetch_ohlcv(symbol, timeframe, limit=100)
-        # Format for lightweight-charts: { time: seconds, value: close }
-        # ohlcv is DataFrame with DateTimeIndex (UTC or ET)
-        formatted = []
-        for ts, row in ohlcv.iterrows():
-            formatted.append({
-                "time": int(ts.timestamp()), # timestamp() returns UTC seconds
-                "price": row['close']
-            })
-        return formatted
+        ohlcv = await analyzer.adapter.fetch_ohlcv(symbol, timeframe)
+        
+        if ohlcv.empty:
+            return []
+
+        # Slice to limit
+        if len(ohlcv) > limit:
+            ohlcv = ohlcv.iloc[-limit:]
+        
+        # Vectorized formatting (100x faster than iterrows)
+        # Create a temp df for serialization
+        export_df = ohlcv.copy()
+        # Convert index (Datetime) to seconds
+        export_df['time'] = (export_df.index.astype('int64') // 10**9).astype(int)
+        export_df['price'] = export_df['close']
+        
+        # Return as list of dicts
+        return export_df[['time', 'price']].to_dict(orient='records')
+        
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
