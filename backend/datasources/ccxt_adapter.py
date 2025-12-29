@@ -89,24 +89,10 @@ class CCXTAdapter(DataAdapter):
 
     async def fetch_ohlcv(self, symbol: str, timeframe: str, limit: int = 1000) -> pd.DataFrame:
         """
-        Returns cached data if available.
+        Returns cached data only. Updates are handled by background_updater.
         For 4h and 1d, we return the cached resampled data.
         """
         key = f"{symbol}_{timeframe}"
-        
-        # If we have it in cache, return immediately (fastest)
-        if key in self.cache:
-            return self.cache[key]
-            
-        # If not, we need to update.
-        # For 4h/1d, this means updating 1h, which triggers resampling.
-        if timeframe in ['4h', '1d']:
-            await self.update_cache(symbol, '1h')
-            # After update, it should be in cache
-            return self.cache.get(key, pd.DataFrame())
-        
-        # For 15m/1h, standard update
-        await self.update_cache(symbol, timeframe)
         return self.cache.get(key, pd.DataFrame())
 
     def resample_ohlcv(self, df: pd.DataFrame, timeframe: str) -> pd.DataFrame:
