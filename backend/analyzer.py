@@ -123,8 +123,24 @@ class Analyzer:
             prob_curve.append({"length": i, "prob": round(prob, 1)})
 
         # Duration Calculation for Close Time
-        duration_ms = self._get_timeframe_ms(timeframe)
-        close_time = int(df.index[-1].timestamp() * 1000) + duration_ms
+        # Robust Wall-Clock Calculation (Decoupled from data freshness)
+        import time
+        now_ts = time.time()
+        duration_s = self._get_timeframe_ms(timeframe) / 1000
+        
+        # Calculate next boundary
+        # For 15m (900s), 1h (3600s), 4h (14400s), 1d (86400s)
+        if duration_s > 0:
+             # Align to standard intervals
+             next_boundary = ((int(now_ts) // int(duration_s)) + 1) * int(duration_s)
+             close_time = next_boundary * 1000
+        else:
+             # Fallback
+             close_time = int(df.index[-1].timestamp() * 1000) + self._get_timeframe_ms(timeframe)
+
+        # Check for staleness (if data is older than 2x timeframe)
+        last_data_ts = df.index[-1].timestamp()
+        is_stale = (now_ts - last_data_ts) > (duration_s * 2)
 
         return {
             "symbol": symbol,
@@ -132,6 +148,7 @@ class Analyzer:
             "current_price": df['close'].iloc[-1],
             "candle_open": df['open'].iloc[-1],
             "candle_close_time": close_time,
+            "is_stale": is_stale,
             "current_streak": {
                 "type": current_streak_type,
                 "length": int(current_streak_len)
