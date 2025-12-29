@@ -1,3 +1,5 @@
+import json
+import os
 import pandas as pd
 import numpy as np
 from typing import Dict, List, Optional
@@ -6,6 +8,69 @@ from .datasources.ccxt_adapter import CCXTAdapter
 class Analyzer:
     def __init__(self):
         self.adapter = CCXTAdapter()
+        self.HISTORY_FILE = "/data/streak_history.json" if os.path.exists("/data") else "streak_history.json"
+        self._load_history()
+
+    def _load_history(self):
+        self.history = {}
+        if os.path.exists(self.HISTORY_FILE):
+            try:
+                with open(self.HISTORY_FILE, 'r') as f:
+                    self.history = json.load(f)
+            except: pass
+
+    def _save_history(self):
+        try:
+            with open(self.HISTORY_FILE, 'w') as f:
+                json.dump(self.history, f)
+        except: pass
+
+    def _update_and_get_distribution(self, symbol, timeframe, streaks_df, active_color):
+        key = f"{symbol}_{timeframe}"
+        if key not in self.history:
+            self.history[key] = {"last_processed_ts": 0, "green": {"counts": {}, "last_happened": {}}, "red": {"counts": {}, "last_happened": {}}}
+        
+        hist = self.history[key]
+        last_ts = hist["last_processed_ts"]
+        
+        completed_streaks = streaks_df.iloc[:-1]
+        
+        updated = False
+        for _, row in completed_streaks.iterrows():
+            end_time_ts = row['end_time']
+            end_ts_ms = int(end_time_ts.timestamp() * 1000)
+            
+            if end_ts_ms > last_ts:
+                color = row['color'] # 'green' or 'red'
+                length = str(row['length'])
+                
+                # Safety for unexpected colors
+                if color not in ['green', 'red']: continue
+                
+                sub_hist = hist[color]
+                sub_hist["counts"][length] = sub_hist["counts"].get(length, 0) + 1
+                sub_hist["last_happened"][length] = max(sub_hist["last_happened"].get(length, 0), end_ts_ms)
+                
+                hist["last_processed_ts"] = max(hist["last_processed_ts"], end_ts_ms)
+                updated = True
+        
+        if updated:
+            self._save_history()
+            
+        # Return distribution for ACTIVE color
+        if active_color not in ['green', 'red']: return {}
+        
+        target_data = hist[active_color]
+        dist_out = {}
+        for length_str, count in target_data["counts"].items():
+            last_ts_val = target_data["last_happened"].get(length_str, 0)
+            date_str = pd.to_datetime(last_ts_val, unit='ms').strftime("%d.%m.%Y")
+            dist_out[int(length_str)] = {
+                "count": count,
+                "last_happened": date_str
+            }
+            
+        return dict(sorted(dist_out.items()))
 
     def _get_timeframe_ms(self, tf: str) -> int:
         if not tf: return 0
@@ -91,22 +156,9 @@ class Analyzer:
             prob_continue = instances_continuing / total_instances_reaching_N
             prob_reverse = 1.0 - prob_continue
         
-        # Distribution Data (Histogram) with Last Happened Date
-        same_color_streaks = streaks[streaks['color'] == current_streak_type]
-        dist_counts = same_color_streaks['length'].value_counts()
-        dist_last_times = same_color_streaks.groupby('length')['end_time'].max()
-        
-        distribution = {}
-        for length in dist_counts.index:
-            count = dist_counts[length]
-            last_time = dist_last_times[length]
-            distribution[int(length)] = {
-                "count": int(count),
-                "last_happened": last_time.strftime("%d.%m.%Y")
-            }
-        
-        # Sort by length key
-        distribution = dict(sorted(distribution.items()))
+        # Distribution Data (Persistent Accumulator)
+        # Using persistent history to track all-time stats even if cache is short
+        distribution = self._update_and_get_distribution(symbol, timeframe, streaks, current_streak_type)
 
         # --- NEW METRICS ---
         
