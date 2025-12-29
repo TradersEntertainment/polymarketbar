@@ -23,6 +23,19 @@ class Analyzer:
         if df.empty:
             return None
 
+        # --- SYNC WITH LIVE PRICE ---
+        # Overwrite the last candle's close with the real-time price to ensure instant streak updates
+        try:
+            live_price = await self.adapter.fetch_current_price(symbol)
+            if live_price > 0:
+                # Update the last row's close price
+                # We use .iloc[-1, index_of_close] to be safe
+                close_col_idx = df.columns.get_loc('close')
+                df.iloc[-1, close_col_idx] = live_price
+        except Exception:
+            pass # Fail silently and use cached close if live fetch fails
+        # -----------------------------
+
         # Determine candle colors (Close > Open: Green, Close < Open: Red)
         # For flat candles (Close == Open), we continue the previous color (Trend persistence)
         conditions = [
