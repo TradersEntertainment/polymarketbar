@@ -32,6 +32,9 @@ class CCXTAdapter(DataAdapter):
         self.DATA_DIR = "/data" if os.path.exists("/data") else "." 
         self.CACHE_FILE = os.path.join(self.DATA_DIR, "ohlcv_cache.pkl")
         
+        # Concurrency Lock
+        self.update_lock = asyncio.Lock()
+        
         self.load_cache()
 
     def load_cache(self):
@@ -122,12 +125,12 @@ class CCXTAdapter(DataAdapter):
         
         if timeframe == '1d':
             # Daily closes at 12:00 PM (Noon) ET.
-            # Origin at 12:00 PM ensures bins are 12:00 -> 12:00.
+            # Using offset is deprecated in new pandas but often reliable for simple shifts.
+            # However, origin is better. 12:00 PM = 12h offset from midnight.
             origin = midnight_et + pd.Timedelta(hours=12)
             rule = '24h'
         elif timeframe == '4h':
-            # 4h candles should align to 00, 04, 08, 12, 16, 20.
-            # Midnight origin covers this perfectly.
+            # 4h candles align to 00, 04, 08...
             origin = midnight_et
             rule = '4h'
         else:
@@ -135,21 +138,18 @@ class CCXTAdapter(DataAdapter):
             rule = timeframe
         
         # Resample
-        # close='right', label='right' is default for M/D/Y but usually left for lower freqs.
-        # We want the timestamp to represent the CLOSE time usually in this app context 
-        # (calculated elsewhere as end_time). 
-        # Standard OHLVC usually uses OPEN time as the label. 
-        # CCXT/Lightweight charts verify this.
-        # Let's keep default behavior but ensure origin is correct.
-        resampled = df_et.resample(rule, origin=origin).agg({
-            'open': 'first',
-            'high': 'max',
-            'low': 'min',
-            'close': 'last',
-            'volume': 'sum'
-        })
-        
-        return resampled.dropna()
+        try:
+            resampled = df_et.resample(rule, origin=origin).agg({
+                'open': 'first',
+                'high': 'max',
+                'low': 'min',
+                'close': 'last',
+                'volume': 'sum'
+            })
+            return resampled.dropna()
+        except Exception as e:
+            logger.error(f"Resample failed for {timeframe}: {e}")
+            return pd.DataFrame()
 
     async def update_cache(self, symbol: str, timeframe: str):
         # If 4h/1d requested, we redirect to 1h update
@@ -158,11 +158,19 @@ class CCXTAdapter(DataAdapter):
             return
 
         key = f"{symbol}_{timeframe}"
-        current_df = self.cache.get(key)
         
-        try:
-            # Case 1: Updating existing cache (Fast)
-            if current_df is not None and not current_df.empty:
+        # Use simple locking to prevent thundering herd
+        async with self.update_lock:
+            # Check cache again inside lock (Double-Check Pattern)
+            if key in self.cache and timeframe not in ['4h', '1d']:
+                # Basic staleness check could go here, but for now we rely on the caller/timer
+                pass
+
+            current_df = self.cache.get(key)
+            
+            try:
+                # Case 1: Updating existing cache (Fast)
+                if current_df is not None and not current_df.empty:
                 last_ts = current_df.index[-1].value // 10**6
                 # Fetch only new data
                 new_data = await self._fetch_aggregated_ohlcv(symbol, timeframe, limit=100, since=last_ts)
