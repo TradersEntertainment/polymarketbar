@@ -71,7 +71,11 @@ async def get_poly_markets(active: bool = True, limit: int = 20):
         resp = await http_client.get(url, params=params)
         resp.raise_for_status()
         return resp.json()
+    except httpx.HTTPStatusError as exc:
+        print(f"Proxy Error {url}: {exc.response.status_code} - {exc.response.text}")
+        raise HTTPException(status_code=exc.response.status_code, detail=f"Upstream Error: {exc.response.text}")
     except Exception as e:
+        print(f"Proxy Exception {url}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/poly/orderbook")
@@ -85,7 +89,11 @@ async def get_poly_orderbook(market_id: str):
         resp = await http_client.get(url, params=params)
         resp.raise_for_status()
         return resp.json()
+    except httpx.HTTPStatusError as exc:
+        print(f"Proxy Error {url}: {exc.response.status_code} - {exc.response.text}")
+        raise HTTPException(status_code=exc.response.status_code, detail=f"Upstream Error: {exc.response.text}")
     except Exception as e:
+        print(f"Proxy Exception {url}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/poly/clob/book")
@@ -99,8 +107,11 @@ async def get_clob_book(token_id: str):
         resp = await http_client.get(url, params=params)
         resp.raise_for_status()
         return resp.json()
+    except httpx.HTTPStatusError as exc:
+        print(f"Proxy Error {url} ({token_id}): {exc.response.status_code} - {exc.response.text}")
+        raise HTTPException(status_code=exc.response.status_code, detail=f"Upstream Error: {exc.response.text}")
     except Exception as e:
-        # Log specific error for debugging if needed, but for now simple return
+        print(f"Proxy Exception {url} ({token_id}): {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/poly/events")
@@ -117,7 +128,11 @@ async def get_poly_events(slug: str = None):
         resp = await http_client.get(url, params=params)
         resp.raise_for_status()
         return resp.json()
+    except httpx.HTTPStatusError as exc:
+        print(f"Proxy Error {url}: {exc.response.status_code} - {exc.response.text}")
+        raise HTTPException(status_code=exc.response.status_code, detail=f"Upstream Error: {exc.response.text}")
     except Exception as e:
+        print(f"Proxy Exception {url}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/poly/candles")
@@ -133,7 +148,11 @@ async def get_poly_candles(market_id: str, tf: str = "1h"):
         resp = await http_client.get(url, params=params)
         resp.raise_for_status()
         return resp.json()
+    except httpx.HTTPStatusError as exc:
+        print(f"Proxy Error {url}: {exc.response.status_code} - {exc.response.text}")
+        raise HTTPException(status_code=exc.response.status_code, detail=f"Upstream Error: {exc.response.text}")
     except Exception as e:
+        print(f"Proxy Exception {url}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 # --- Original Endpoints ---
