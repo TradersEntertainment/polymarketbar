@@ -287,8 +287,8 @@ async def background_updater():
                 for timeframe in timeframes:
                     # This will fetch new data and update the cache
                     await analyzer.adapter.update_cache(symbol, timeframe)
-                    # Small sleep to avoid hitting rate limits too hard in a burst
-                    await asyncio.sleep(1) 
+                    # Small sleep to avoid hitting rate limits too hard in a burst but keep it snappy
+                    await asyncio.sleep(0.1) 
             
             logger.info("Background update cycle complete.")
             consecutive_errors = 0 # Reset on success

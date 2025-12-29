@@ -89,11 +89,25 @@ class CCXTAdapter(DataAdapter):
 
     async def fetch_ohlcv(self, symbol: str, timeframe: str, limit: int = 1000) -> pd.DataFrame:
         """
-        Returns cached data only. Updates are handled by background_updater.
-        For 4h and 1d, we return the cached resampled data.
+        Returns cached data. If missing, triggers immediate update (Hybrid Mode).
+        For 4h and 1d, this ensures resampling happens if 1h is available.
         """
         key = f"{symbol}_{timeframe}"
-        return self.cache.get(key, pd.DataFrame())
+        data = self.cache.get(key, pd.DataFrame())
+        
+        # If cash miss or empty, fetch immediately
+        if data.empty:
+            logger.info(f"Cache miss for {key}, fetching immediately...")
+            
+            # For 4h/1d, we need 1h update logic which handles recursion
+            if timeframe in ['4h', '1d']:
+                await self.update_cache(symbol, '1h')
+            else:
+                await self.update_cache(symbol, timeframe)
+                
+            return self.cache.get(key, pd.DataFrame())
+            
+        return data
 
     def resample_ohlcv(self, df: pd.DataFrame, timeframe: str) -> pd.DataFrame:
         """
