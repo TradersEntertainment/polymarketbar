@@ -156,11 +156,18 @@ class CCXTAdapter(DataAdapter):
                 'volume': 'sum'
             })
             # Check if valid
-            clean = resampled.dropna()
-            if not clean.empty:
-                return clean
-            else:
-                logger.warning(f"Strategy 1 (Strict) returned empty for {timeframe}. Trying fallback...")
+            # Allow partial last bin by NOT dropping all NaNs if we have at least some data
+            # But we want to avoid completely empty rows.
+            # partial bins usually have data, just maybe 'volume' missing? No, pandas resample handles it.
+            # The issue is probably that the first bin is partial and getting dropped?
+            # Let's just return resampled if not empty, without strict dropna if it kills everything.
+            if not resampled.empty:
+                # Only drop execution errors (all-NaN rows), keep partials
+                clean = resampled.dropna(how='all')
+                if not clean.empty:
+                    return clean
+            
+            logger.warning(f"Strategy 1 (Strict) returned empty for {timeframe}. Trying fallback...")
         except Exception as e:
             logger.error(f"Strategy 1 failed for {timeframe}: {e}")
 

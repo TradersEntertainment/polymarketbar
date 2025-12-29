@@ -238,7 +238,19 @@ def health():
 
 @app.on_event("startup")
 async def startup_event():
+    import logging
+    logger = logging.getLogger(__name__) # Use local logger or global if available
+    logger.info("Starting up App...")
+    
+    # Start background updater
     asyncio.create_task(background_updater())
+
+    # Warmup Cache Immediately
+    logger.info("Warming up cache for major symbols...")
+    symbols = ['BTC', 'ETH', 'SOL', 'XRP'] # Default symbols
+    # We update '1h' which drives 1d/4h too.
+    for sym in symbols:
+        asyncio.create_task(analyzer.adapter.update_cache(sym, '1h'))
 
 async def background_updater():
     """
