@@ -10,6 +10,11 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 import httpx
 
+from dotenv import load_dotenv
+
+# Load env vars
+load_dotenv()
+
 # Configure Logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("Notifier")
@@ -25,8 +30,9 @@ SETTINGS_FILE = "/data/notifier_settings.json" if os.path.exists("/data") else "
 class Settings:
     def __init__(self):
         self.target_url = "https://polymarketbar-production.up.railway.app"
-        self.telegram_token = ""
-        self.telegram_chat_id = ""
+        # Defaults from Env
+        self.telegram_token = os.getenv("TELEGRAM_BOT_TOKEN", "")
+        self.telegram_chat_id = os.getenv("TELEGRAM_CHAT_ID", "")
         self.streak_threshold = 5
         self.enabled = False
         self.load()
@@ -37,8 +43,16 @@ class Settings:
                 with open(SETTINGS_FILE, 'r') as f:
                     data = json.load(f)
                     self.target_url = data.get("target_url", self.target_url)
-                    self.telegram_token = data.get("telegram_token", self.telegram_token)
-                    self.telegram_chat_id = data.get("telegram_chat_id", self.telegram_chat_id)
+                    # Prefer JSON value if it exists and is not empty, else keep Env default
+                    # Use 'or' to fallback if JSON has empty string but Env is set? 
+                    # Generally user-saved empty string means "clear it".
+                    # But here, if user provided Env, they probably want it used if JSON is missing.
+                    if "telegram_token" in data:
+                        self.telegram_token = data["telegram_token"]
+                    
+                    if "telegram_chat_id" in data:
+                        self.telegram_chat_id = data["telegram_chat_id"]
+                        
                     self.streak_threshold = int(data.get("streak_threshold", self.streak_threshold))
                     self.enabled = bool(data.get("enabled", self.enabled))
             except Exception as e:
