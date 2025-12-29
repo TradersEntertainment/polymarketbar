@@ -43,11 +43,11 @@ const AssetCard = ({ data }) => {
                     <p className="text-slate-400 font-mono text-xs md:text-sm mt-0.5 opacity-80">${current_price.toLocaleString()}</p>
                 </div>
                 <div className={`flex flex-col items-end ${streakColor}`}>
-                    <div className="flex items-center gap-1 text-lg md:text-4xl font-black drop-shadow-lg">
-                        {isGreen ? <ArrowUp className="w-5 h-5 md:w-9 md:h-9" strokeWidth={3} /> : <ArrowDown className="w-5 h-5 md:w-9 md:h-9" strokeWidth={3} />}
+                    <div className={`flex items-center gap-1 text-2xl md:text-5xl font-black drop-shadow-xl ${isGreen ? 'drop-shadow-[0_0_15px_rgba(74,222,128,0.5)]' : 'drop-shadow-[0_0_15px_rgba(248,113,113,0.5)]'}`}>
+                        {isGreen ? <ArrowUp className="w-6 h-6 md:w-10 md:h-10" strokeWidth={4} /> : <ArrowDown className="w-6 h-6 md:w-10 md:h-10" strokeWidth={4} />}
                         {current_streak.length}
                     </div>
-                    <span className={`text-[10px] font-bold tracking-widest uppercase opacity-90 bg-slate-900/50 px-2 py-0.5 rounded-full ${isGreen ? 'text-green-500' : 'text-red-500'}`}>
+                    <span className={`text-[10px] md:text-xs font-bold tracking-widest uppercase opacity-90 bg-slate-900/50 px-2 md:px-3 py-0.5 md:py-1 rounded-full mt-1 ${isGreen ? 'text-green-400' : 'text-red-400'}`}>
                         {isGreen ? 'Green Streak' : 'Red Streak'}
                     </span>
                 </div>
