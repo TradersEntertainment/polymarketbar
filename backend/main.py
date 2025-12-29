@@ -263,12 +263,13 @@ async def startup_event():
     # Start background updater
     asyncio.create_task(background_updater())
 
-    # Warmup Cache Immediately
-    logger.info("Warming up cache for major symbols...")
+    # Warmup & Backfill Cache
+    logger.info("Starting Deep Backfill (180 Days) for major symbols...")
     symbols = ['BTC', 'ETH', 'SOL', 'XRP'] # Default symbols
     # We update '1h' which drives 1d/4h too.
     for sym in symbols:
-        asyncio.create_task(analyzer.adapter.update_cache(sym, '1h'))
+        # Fetch deep history to populate daily/4h charts robustly
+        asyncio.create_task(analyzer.adapter.backfill_history(sym, '1h', days=180))
 
 async def background_updater():
     """

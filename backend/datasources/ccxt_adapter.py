@@ -314,6 +314,80 @@ class CCXTAdapter(DataAdapter):
             # logger.warning(f"Error {exchange.id}: {e}")
             return pd.DataFrame()
 
+    async def backfill_history(self, symbol: str, timeframe: str = '1h', days: int = 30):
+        """
+        Fetches deep history (backfill) for a symbol.
+        Used primarily for 1h data to ensure robust 4h/1d resampling.
+        """
+        import time
+        logger.info(f"Backfilling {symbol} {timeframe} for {days} days...")
+        
+        target_hours = days * 24
+        if timeframe != '1h':
+            # Approximate for other TFs if needed, but we focus on 1h
+            pass
+            
+        start_ts = int(time.time() * 1000) - (days * 86400 * 1000)
+        current_since = start_ts
+        
+        # Use primary exchange (Binance)
+        exchange = self.exchanges[0] # Binance
+        
+        # Map symbol
+        base_currency = symbol.split('/')[0] if '/' in symbol else symbol
+        mapped_symbol = self.symbol_map.get(base_currency, {}).get('binance')
+        if not mapped_symbol:
+            mapped_symbol = f"{base_currency}/USDT"
+
+        all_candles = []
+        
+        try:
+            while True:
+                # Don't fetch future
+                if current_since > int(time.time() * 1000):
+                    break
+                    
+                ohlcv = await exchange.fetch_ohlcv(mapped_symbol, timeframe, since=current_since, limit=1000)
+                if not ohlcv:
+                    break
+                
+                all_candles.extend(ohlcv)
+                
+                last_ts = ohlcv[-1][0]
+                # If we caught up to now (approx), break
+                if last_ts >= int(time.time() * 1000) - 3600000:
+                    break
+                    
+                if last_ts == current_since:
+                    current_since += 3600000 * 1000 # Force 1000h jump if stuck? No 1000 limit * 1h duration
+                    # Wait, simple: current_since = last_ts + 1
+                    current_since += 1
+                else:
+                    current_since = last_ts + 1
+                
+                await asyncio.sleep(0.5) # Respect rate limits
+
+            if all_candles:
+                df = pd.DataFrame(all_candles, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+                df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms', utc=True)
+                df.set_index('timestamp', inplace=True)
+                
+                # Update Cache
+                key = f"{symbol}_{timeframe}"
+                existing = self.cache.get(key, pd.DataFrame())
+                
+                combined = pd.concat([existing, df])
+                combined = combined[~combined.index.duplicated(keep='last')].sort_index()
+                
+                self.cache[key] = combined
+                logger.info(f"Backfill complete for {symbol}: {len(combined)} candles.")
+                
+                # Trigger derived updates (4h/1d)
+                await self._update_derived_cache(symbol, combined)
+                
+        except Exception as e:
+            logger.error(f"Backfill error {symbol}: {e}")
+
     async def fetch_current_price(self, symbol: str) -> float:
         # Check cache (TTL 2 seconds)
         import time
