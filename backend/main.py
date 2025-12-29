@@ -37,13 +37,22 @@ live_stats = LiveStats()
 stats_cache = {}
 CACHE_DURATION = 60 # seconds
 
+
+# Global HTTP client
+http_client = None
+
 @app.on_event("startup")
 async def startup():
-    pass
+    global http_client
+    # timeouts=None or reasonable defaults? httpx default is 5s.
+    # Let's set a reasonable timeout to avoid hanging indefinitely if Polymarket is down.
+    http_client = httpx.AsyncClient(timeout=10.0)
 
 @app.on_event("shutdown")
 async def shutdown():
     await analyzer.close()
+    if http_client:
+        await http_client.aclose()
 
 # --- NEW: Polymarket Proxy Endpoints ---
 
@@ -58,13 +67,12 @@ async def get_poly_markets(active: bool = True, limit: int = 20):
         "limit": limit,
         "closed": "false"
     }
-    async with httpx.AsyncClient() as client:
-        try:
-            resp = await client.get(url, params=params)
-            resp.raise_for_status()
-            return resp.json()
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
+    try:
+        resp = await http_client.get(url, params=params)
+        resp.raise_for_status()
+        return resp.json()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/poly/orderbook")
 async def get_poly_orderbook(market_id: str):
@@ -73,13 +81,12 @@ async def get_poly_orderbook(market_id: str):
     """
     url = "https://gamma-api.polymarket.com/orderbook"
     params = {"market_id": market_id}
-    async with httpx.AsyncClient() as client:
-        try:
-            resp = await client.get(url, params=params)
-            resp.raise_for_status()
-            return resp.json()
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
+    try:
+        resp = await http_client.get(url, params=params)
+        resp.raise_for_status()
+        return resp.json()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/poly/clob/book")
 async def get_clob_book(token_id: str):
@@ -88,13 +95,13 @@ async def get_clob_book(token_id: str):
     """
     url = "https://clob.polymarket.com/book"
     params = {"token_id": token_id}
-    async with httpx.AsyncClient() as client:
-        try:
-            resp = await client.get(url, params=params)
-            resp.raise_for_status()
-            return resp.json()
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
+    try:
+        resp = await http_client.get(url, params=params)
+        resp.raise_for_status()
+        return resp.json()
+    except Exception as e:
+        # Log specific error for debugging if needed, but for now simple return
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/poly/events")
 async def get_poly_events(slug: str = None):
@@ -106,13 +113,12 @@ async def get_poly_events(slug: str = None):
     if slug:
         params["slug"] = slug
         
-    async with httpx.AsyncClient() as client:
-        try:
-            resp = await client.get(url, params=params)
-            resp.raise_for_status()
-            return resp.json()
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
+    try:
+        resp = await http_client.get(url, params=params)
+        resp.raise_for_status()
+        return resp.json()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/poly/candles")
 async def get_poly_candles(market_id: str, tf: str = "1h"):
@@ -123,13 +129,12 @@ async def get_poly_candles(market_id: str, tf: str = "1h"):
     # Polymarket supports: 1m, 5m, 15m, 30m, 1h, 6h, 1d
     url = "https://gamma-api.polymarket.com/candles"
     params = {"market_id": market_id, "resolution": tf} 
-    async with httpx.AsyncClient() as client:
-        try:
-            resp = await client.get(url, params=params)
-            resp.raise_for_status()
-            return resp.json()
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
+    try:
+        resp = await http_client.get(url, params=params)
+        resp.raise_for_status()
+        return resp.json()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 # --- Original Endpoints ---
 
