@@ -11,17 +11,49 @@ logger = logging.getLogger(__name__)
 
 class CCXTAdapter(DataAdapter):
     def __init__(self):
-        self.exchanges = [
-            ccxt.binance({'timeout': 10000, 'enableRateLimit': True}),
-            ccxt.coinbase({'timeout': 10000, 'enableRateLimit': True}),
-            ccxt.kraken({'timeout': 10000, 'enableRateLimit': True})
-        ]
+        # Initialize exchanges in priority order
+        # Hyperliquid -> Coinbase Futures -> Coinbase Spot -> Kraken -> Binance (Deprioritized)
+        self.exchanges = []
+        try: self.exchanges.append(ccxt.hyperliquid({'timeout': 10000, 'enableRateLimit': True}))
+        except: logger.warning("Hyperliquid not available in this CCXT version")
+        
+        try: self.exchanges.append(ccxt.coinbaseinternational({'timeout': 10000, 'enableRateLimit': True}))
+        except: logger.warning("Coinbase International not available")
+        
+        self.exchanges.append(ccxt.coinbase({'timeout': 10000, 'enableRateLimit': True}))
+        self.exchanges.append(ccxt.kraken({'timeout': 10000, 'enableRateLimit': True}))
+        self.exchanges.append(ccxt.binance({'timeout': 10000, 'enableRateLimit': True}))
+
         # Map common symbols to exchange-specific symbols
         self.symbol_map = {
-            'BTC': {'binance': 'BTC/USDT', 'coinbase': 'BTC/USD', 'kraken': 'BTC/USD'},
-            'ETH': {'binance': 'ETH/USDT', 'coinbase': 'ETH/USD', 'kraken': 'ETH/USD'},
-            'SOL': {'binance': 'SOL/USDT', 'coinbase': 'SOL/USD', 'kraken': 'SOL/USD'},
-            'XRP': {'binance': 'XRP/USDT', 'coinbase': 'XRP/USD', 'kraken': 'XRP/USD'},
+            'BTC': {
+                'binance': 'BTC/USDT', 
+                'coinbase': 'BTC/USD', 
+                'kraken': 'BTC/USD', 
+                'hyperliquid': 'BTC/USDC:USDC',
+                'coinbaseinternational': 'BTC/USDC:USDC'
+            },
+            'ETH': {
+                'binance': 'ETH/USDT', 
+                'coinbase': 'ETH/USD', 
+                'kraken': 'ETH/USD',
+                'hyperliquid': 'ETH/USDC:USDC',
+                'coinbaseinternational': 'ETH/USDC:USDC'
+            },
+            'SOL': {
+                'binance': 'SOL/USDT', 
+                'coinbase': 'SOL/USD', 
+                'kraken': 'SOL/USD',
+                'hyperliquid': 'SOL/USDC:USDC',
+                'coinbaseinternational': 'SOL/USDC:USDC'
+            },
+            'XRP': {
+                'binance': 'XRP/USDT', 
+                'coinbase': 'XRP/USD', 
+                'kraken': 'XRP/USD',
+                'hyperliquid': 'XRP/USDC:USDC',
+                'coinbaseinternational': 'XRP/USDC:USDC'
+            },
         }
         # In-memory cache: { "SYMBOL_TIMEFRAME": pd.DataFrame }
         self.cache: Dict[str, pd.DataFrame] = {}
@@ -79,12 +111,16 @@ class CCXTAdapter(DataAdapter):
         logger.info("Restarting CCXT Adapter...")
         await self.close()
         
-        # Re-init exchanges
-        self.exchanges = [
-            ccxt.binance({'timeout': 10000, 'enableRateLimit': True}),
-            ccxt.coinbase({'timeout': 10000, 'enableRateLimit': True}),
-            ccxt.kraken({'timeout': 10000, 'enableRateLimit': True})
-        ]
+        # Re-init exchanges (Same logic as __init__)
+        self.exchanges = []
+        try: self.exchanges.append(ccxt.hyperliquid({'timeout': 10000, 'enableRateLimit': True}))
+        except: pass
+        try: self.exchanges.append(ccxt.coinbaseinternational({'timeout': 10000, 'enableRateLimit': True}))
+        except: pass
+        self.exchanges.append(ccxt.coinbase({'timeout': 10000, 'enableRateLimit': True}))
+        self.exchanges.append(ccxt.kraken({'timeout': 10000, 'enableRateLimit': True}))
+        self.exchanges.append(ccxt.binance({'timeout': 10000, 'enableRateLimit': True}))
+        
         logger.info("CCXT Adapter restarted successfully.")
 
     async def fetch_ohlcv(self, symbol: str, timeframe: str, limit: int = 1000) -> pd.DataFrame:
@@ -300,7 +336,11 @@ class CCXTAdapter(DataAdapter):
             base_currency = symbol.split('/')[0] if '/' in symbol else symbol
             mapped_symbol = self.symbol_map.get(base_currency, {}).get(exchange.id)
             if not mapped_symbol:
-                mapped_symbol = f"{base_currency}/USDT" if exchange.id == 'binance' else f"{base_currency}/USD"
+                # Default logic if map misses
+                if exchange.id == 'binance': mapped_symbol = f"{base_currency}/USDT"
+                elif 'coinbase' in exchange.id: mapped_symbol = f"{base_currency}/USD" 
+                elif 'hyperliquid' in exchange.id: mapped_symbol = f"{base_currency}/USDC:USDC"
+                else: mapped_symbol = f"{base_currency}/USD"
             
             # logger.info(f"Fetching {mapped_symbol} from {exchange.id} ({timeframe}) since={since}...")
             ohlcv = await asyncio.wait_for(exchange.fetch_ohlcv(mapped_symbol, timeframe, limit=limit, since=since), timeout=10.0)
@@ -318,75 +358,99 @@ class CCXTAdapter(DataAdapter):
         """
         Fetches deep history (backfill) for a symbol.
         Used primarily for 1h data to ensure robust 4h/1d resampling.
+        Iterates through exchanges until one works.
         """
         import time
         logger.info(f"Backfilling {symbol} {timeframe} for {days} days...")
         
         target_hours = days * 24
         if timeframe != '1h':
-            # Approximate for other TFs if needed, but we focus on 1h
             pass
             
         start_ts = int(time.time() * 1000) - (days * 86400 * 1000)
-        current_since = start_ts
         
-        # Use primary exchange (Binance)
-        exchange = self.exchanges[0] # Binance
-        
-        # Map symbol
-        base_currency = symbol.split('/')[0] if '/' in symbol else symbol
-        mapped_symbol = self.symbol_map.get(base_currency, {}).get('binance')
-        if not mapped_symbol:
-            mapped_symbol = f"{base_currency}/USDT"
+        # Try each exchange in priority order
+        for exchange in self.exchanges:
+            logger.info(f"Attempting backfill on {exchange.id}...")
+            
+            current_since = start_ts
+            all_candles = []
+            failed_exchange = False
+            
+            # Map symbol
+            base_currency = symbol.split('/')[0] if '/' in symbol else symbol
+            mapped_symbol = self.symbol_map.get(base_currency, {}).get(exchange.id)
+            
+            if not mapped_symbol:
+                # Basic fallback
+                if 'hyperliquid' in exchange.id: mapped_symbol = f"{base_currency}/USDC:USDC"
+                elif 'coinbase' in exchange.id: mapped_symbol = f"{base_currency}/USD" # Covers intl too mostly
+                else: mapped_symbol = f"{base_currency}/USDT"
+                
+                # Careful with Coinbase futures if not mapped
+                if exchange.id == 'coinbaseinternational': mapped_symbol = f"{base_currency}/USDC:USDC"
 
-        all_candles = []
-        
-        try:
-            while True:
-                # Don't fetch future
-                if current_since > int(time.time() * 1000):
-                    break
-                    
-                ohlcv = await exchange.fetch_ohlcv(mapped_symbol, timeframe, since=current_since, limit=1000)
-                if not ohlcv:
-                    break
-                
-                all_candles.extend(ohlcv)
-                
-                last_ts = ohlcv[-1][0]
-                # If we caught up to now (approx), break
-                if last_ts >= int(time.time() * 1000) - 3600000:
-                    break
-                    
-                if last_ts == current_since:
-                    current_since += 3600000 * 1000 # Force 1000h jump if stuck? No 1000 limit * 1h duration
-                    # Wait, simple: current_since = last_ts + 1
-                    current_since += 1
-                else:
-                    current_since = last_ts + 1
-                
-                await asyncio.sleep(0.5) # Respect rate limits
+            try:
+                while True:
+                    # Don't fetch future
+                    if current_since > int(time.time() * 1000):
+                        break
+                        
+                    try:
+                        ohlcv = await exchange.fetch_ohlcv(mapped_symbol, timeframe, since=current_since, limit=1000)
+                    except (ccxt.NetworkError, ccxt.ExchangeError) as e:
+                        # If HTTP 451 or other block, this exchange is dead for us
+                        if "451" in str(e):
+                            logger.warning(f"{exchange.id} gave 451 (Restricted). Skipping exchange.")
+                        else:
+                            logger.warning(f"{exchange.id} fetch error: {e}")
+                        failed_exchange = True
+                        break
 
-            if all_candles:
-                df = pd.DataFrame(all_candles, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
-                df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms', utc=True)
-                df.set_index('timestamp', inplace=True)
-                
-                # Update Cache
-                key = f"{symbol}_{timeframe}"
-                existing = self.cache.get(key, pd.DataFrame())
-                
-                combined = pd.concat([existing, df])
-                combined = combined[~combined.index.duplicated(keep='last')].sort_index()
-                
-                self.cache[key] = combined
-                logger.info(f"Backfill complete for {symbol}: {len(combined)} candles.")
-                
-                # Trigger derived updates (4h/1d)
-                await self._update_derived_cache(symbol, combined)
-                
-        except Exception as e:
-            logger.error(f"Backfill error {symbol}: {e}")
+                    if not ohlcv:
+                        break
+                    
+                    all_candles.extend(ohlcv)
+                    
+                    last_ts = ohlcv[-1][0]
+                    # If we caught up to now (approx), break
+                    if last_ts >= int(time.time() * 1000) - 3600000:
+                        break
+                        
+                    if last_ts == current_since:
+                        current_since += 1
+                    else:
+                        current_since = last_ts + 1
+                    
+                    await asyncio.sleep(0.5) # Respect rate limits
+
+                if failed_exchange:
+                    continue # Try next exchange
+
+                if all_candles:
+                    df = pd.DataFrame(all_candles, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+                    df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms', utc=True)
+                    df.set_index('timestamp', inplace=True)
+                    
+                    # Update Cache
+                    key = f"{symbol}_{timeframe}"
+                    existing = self.cache.get(key, pd.DataFrame())
+                    
+                    combined = pd.concat([existing, df])
+                    combined = combined[~combined.index.duplicated(keep='last')].sort_index()
+                    
+                    self.cache[key] = combined
+                    logger.info(f"Backfill complete for {symbol} on {exchange.id}: {len(combined)} candles.")
+                    
+                    # Trigger derived updates (4h/1d)
+                    await self._update_derived_cache(symbol)
+                    return # Success! Exit function
+
+            except Exception as e:
+                logger.error(f"Backfill loop error on {exchange.id}: {e}")
+                continue # Try next exchange
+        
+        logger.error(f"All exchanges failed to backfill {symbol}")
 
     async def fetch_current_price(self, symbol: str) -> float:
         # Check cache (TTL 2 seconds)
@@ -404,7 +468,11 @@ class CCXTAdapter(DataAdapter):
             base = symbol.split('/')[0] if '/' in symbol else symbol
             mapped = self.symbol_map.get(base, {}).get(ex.id)
             if not mapped:
-                mapped = f"{base}/USDT" if ex.id == 'binance' else f"{base}/USD"
+                if 'hyperliquid' in ex.id: mapped = f"{base}/USDC:USDC"
+                elif 'coinbase' in ex.id: mapped = f"{base}/USD" # International uses USDC but spot uses USD
+                elif ex.id == 'binance': mapped = f"{base}/USDT"
+                else: mapped = f"{base}/USD"
+
             tasks.append(asyncio.wait_for(ex.fetch_ticker(mapped), timeout=5.0))
             
         results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -422,5 +490,6 @@ class CCXTAdapter(DataAdapter):
         self.price_cache[symbol] = (median_price, now)
         
         return median_price
+
 
 
