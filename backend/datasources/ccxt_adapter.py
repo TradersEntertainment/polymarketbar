@@ -473,23 +473,52 @@ class CCXTAdapter(DataAdapter):
                 elif ex.id == 'binance': mapped = f"{base}/USDT"
                 else: mapped = f"{base}/USD"
 
-            tasks.append(asyncio.wait_for(ex.fetch_ticker(mapped), timeout=5.0))
+            # Create a task for each exchange and track them
+            t = asyncio.create_task(self._safe_fetch_ticker(ex, mapped))
+            tasks.append(t)
             
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-        prices = []
-        for r in results:
-            if isinstance(r, dict) and 'last' in r:
-                prices.append(r['last'])
+        # Process as they complete (First Success Wins)
+        try:
+            for future in asyncio.as_completed(tasks):
+                try:
+                    price = await future
+                    if price > 0:
+                        # Update cache and return immediately
+                        self.price_cache[symbol] = (price, now)
+                        
+                        # Cancel remaining tasks to free connections
+                        for t in tasks:
+                            if not t.done():
+                                t.cancel()
+                                
+                        return price
+                except Exception:
+                    continue
+        except Exception as e:
+            # Fallback cancellation
+            for t in tasks:
+                if not t.done(): t.cancel()
+            logger.error(f"Error in fetch_current_price: {e}")
                 
-        if not prices:
-            return 0.0
+        # If all failed (or returned 0)
+        return 0.0
+
+    async def _safe_fetch_ticker(self, exchange, symbol: str) -> float:
+        try:
+            # Short timeout for live checks
+            ticker = await asyncio.wait_for(exchange.fetch_ticker(symbol), timeout=5.0)
             
-        median_price = float(np.median(prices))
-        
-        # Update cache
-        self.price_cache[symbol] = (median_price, now)
-        
-        return median_price
+            # Helper to get first valid price
+            price = ticker.get('last')
+            if price is None: price = ticker.get('close')
+            if price is None: price = ticker.get('markPrice')
+            if price is None: price = ticker.get('indexPrice')
+            
+            if price is not None:
+                return float(price)
+            return 0.0
+        except Exception:
+            return 0.0
 
 
 
