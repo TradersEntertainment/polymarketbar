@@ -9,6 +9,7 @@ class Analyzer:
     def __init__(self):
         self.adapter = CCXTAdapter()
         self.HISTORY_FILE = "/data/streak_history.json" if os.path.exists("/data") else "streak_history.json"
+        self.last_restart_attempt = 0
         self._load_history()
 
     def _load_history(self):
@@ -270,6 +271,21 @@ class Analyzer:
         last_data_ts = df.index[-1].timestamp()
         duration_s = self._get_timeframe_ms(timeframe) / 1000
         is_stale = (now_ts - last_data_ts) > (duration_s * 2) if duration_s > 0 else False
+
+        # --- WATCHDOG: Auto-Restart if Stale ---
+        if is_stale and (now_ts - self.last_restart_attempt > 300):
+            print(f"Watchdog: Data for {symbol} {timeframe} is stale. Last: {df.index[-1]}. Restarting adapter...")
+            try:
+                # We can't await restart() here easily because we are inside get_stats? 
+                # Yes get_stats is async.
+                await self.restart()
+                self.last_restart_attempt = now_ts
+                # Return immediately to avoid sending stale data, or send stale with warning?
+                # Best to return None or Stale flag.
+                # Returning None might break frontend, so we proceed but with is_stale=True
+            except Exception as e:
+                print(f"Watchdog Restart Failed: {e}")
+        # ---------------------------------------
 
         return {
             "symbol": symbol,
