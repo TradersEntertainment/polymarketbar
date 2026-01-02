@@ -59,10 +59,6 @@ async def startup():
 
 @app.on_event("shutdown")
 async def shutdown():
-    # Save cache before exiting
-    if analyzer and analyzer.adapter:
-        analyzer.adapter.save_cache()
-    
     await analyzer.close()
     if http_client:
         await http_client.aclose()
@@ -257,34 +253,20 @@ def health():
 @app.on_event("startup")
 async def startup_event():
     import logging
-    logger = logging.getLogger(__name__) # Use local logger or global if available
-    logger.info("Starting up App...")
+    logger = logging.getLogger(__name__)
+    logger.info("Starting up App (Hyperliquid Mode)...")
     
     # Start background updater
     asyncio.create_task(background_updater())
 
-    # Warmup & Backfill Cache
-    logger.info("Starting Deep Backfill (180 Days) for major symbols...")
-    symbols = ['BTC', 'ETH', 'SOL', 'XRP'] # Default symbols
-    # We update '1h' which drives 1d/4h too.
-    for sym in symbols:
-        # Fetch deep history to populate daily/4h charts robustly
-        asyncio.create_task(analyzer.adapter.backfill_history(sym, '1h', days=180))
-        # Backfill 15m for 30 days (~2800 candles) for intraday history
-        asyncio.create_task(analyzer.adapter.backfill_history(sym, '15m', days=30))
-
 async def background_updater():
     """
-    Background task to keep data fresh.
-    Updates all symbols/timeframes every 15 seconds.
-    Includes auto-restart logic for connections.
+    Background task to keep data fresh and check alerts.
     """
     import logging
     import time
     logger = logging.getLogger(__name__)
     symbols = ['BTC', 'ETH', 'SOL', 'XRP']
-    # We only need to update 15m and 1h. 
-    # 4h and 1d are now derived (resampled) from 1h data to match Polymarket time.
     timeframes = ['15m', '1h']
     
     logger.info("Starting background updater...")
@@ -293,18 +275,8 @@ async def background_updater():
     last_restart_time = time.time()
     RESTART_INTERVAL = 6 * 60 * 60  # 6 hours
     MAX_CONSECUTIVE_ERRORS = 3
-    SAVE_INTERVAL = 5 * 60  # 5 minutes
-    last_save_time = time.time()
     
     while True:
-        # Periodic Save
-        if time.time() - last_save_time > SAVE_INTERVAL:
-            try:
-                analyzer.adapter.save_cache()
-                last_save_time = time.time()
-            except Exception as e:
-                logger.error(f"Background save failed: {e}")
-
         # Periodic proactive restart
         if time.time() - last_restart_time > RESTART_INTERVAL:
             logger.info("Performing scheduled restart of adapters...")
@@ -318,8 +290,8 @@ async def background_updater():
         try:
             for symbol in symbols:
                 for timeframe in timeframes:
-                    # This will fetch new data and update the cache
-                    await analyzer.adapter.update_cache(symbol, timeframe)
+                    # In Hyperliquid Mode, get_stats fetches fresh data directly.
+                    # We just need to call it to check for alerts.
                     
                     # Check for Alerts
                     try:
@@ -328,19 +300,19 @@ async def background_updater():
                             await notifier.check_and_alert(
                                 symbol, 
                                 timeframe, 
-                                stats['streak_type'], 
-                                stats['streak_count'], 
-                                stats['price']
+                                stats['current_streak']['type'], # Fixed key from previous logic?
+                                stats['current_streak']['length'], # Fixed key
+                                stats['current_price'] # Fixed key
                             )
                     except Exception as e:
-                        logger.error(f"Alert check failed for {symbol} {timeframe}: {e}")
+                        # logger.error(f"Alert check failed for {symbol} {timeframe}: {e}")
+                        pass
 
-                    # Small sleep to avoid hitting rate limits too hard in a burst but keep it snappy
-                    await asyncio.sleep(0.1) 
+                    await asyncio.sleep(0.5) 
             
-            logger.info("Background update cycle complete.")
+            # logger.info("Background update cycle complete.")
             consecutive_errors = 0 # Reset on success
-            await asyncio.sleep(15) # Wait 15s before next cycle
+            await asyncio.sleep(15) 
         except Exception as e:
             consecutive_errors += 1
             logger.error(f"Error in background updater (Count: {consecutive_errors}): {e}")
@@ -350,7 +322,7 @@ async def background_updater():
                 try:
                     await analyzer.restart()
                     consecutive_errors = 0
-                    last_restart_time = time.time() # Reset timer too
+                    last_restart_time = time.time() 
                 except Exception as restart_err:
                     logger.error(f"Failed to restart adapters during recovery: {restart_err}")
             

@@ -38,6 +38,12 @@ class HyperliquidAdapter:
         logger.info("Restarting Hyperliquid Adapter...")
         await self.close()
         self._init_exchange()
+        
+    # --- Compatibility Stubs for CCXTAdapter ---
+    async def update_cache(self, *args, **kwargs): pass
+    async def backfill_history(self, *args, **kwargs): pass
+    def save_cache(self): pass
+    # -------------------------------------------
 
     async def fetch_ohlcv(self, symbol: str, timeframe: str, limit: int = 1000) -> pd.DataFrame:
         """
