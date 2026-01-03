@@ -16,6 +16,19 @@ const MiniMetric = ({ label, value, icon: Icon, color }) => (
 const AssetCard = ({ data }) => {
     if (!data) return <div className="animate-pulse bg-surface h-[500px] rounded-2xl border border-slate-800"></div>;
 
+    // Handle Error State (Backend returned { error: "..." })
+    if (data.error) {
+        return (
+            <div className="relative overflow-hidden rounded-xl md:rounded-2xl border border-red-500/30 bg-surface p-5 shadow-xl shadow-red-500/5 min-h-[350px] md:min-h-[550px] flex flex-col justify-center items-center text-center">
+                <div className="bg-red-500/10 p-4 rounded-full mb-4">
+                    <Activity className="w-8 h-8 text-red-500" />
+                </div>
+                <h3 className="text-xl font-bold text-white mb-2">Unavailable</h3>
+                <p className="text-slate-400 text-sm max-w-[200px] mx-auto">{data.error}</p>
+            </div>
+        );
+    }
+
     const {
         symbol, timeframe, current_price, candle_open, candle_close_time,
         current_streak, next_candle_prob, distribution, probability_curve, stats

@@ -112,7 +112,7 @@ const SmartTradingPanel = ({ data, timeframe, setTimeframe, selectedSymbol, onSy
         return () => clearInterval(interval);
     }, []);
 
-    if (!data || !data.smart_trading) return null;
+    if (!data || data.error || !data.smart_trading) return null;
 
     const { current_price, smart_trading, symbol } = data;
     const { microtrends, spread, slippage } = smart_trading;
