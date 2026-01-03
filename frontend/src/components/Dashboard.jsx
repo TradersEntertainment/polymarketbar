@@ -232,7 +232,7 @@ const Dashboard = () => {
 
             {/* Main Grid */}
             <main className="max-w-[1600px] mx-auto relative z-10 min-h-[500px]">
-                {loading && (
+                {loading && !error && (
                     <div className="absolute inset-0 z-50 flex items-center justify-center bg-[#0b1121]/90 backdrop-blur-md rounded-3xl transition-all duration-300">
                         <div className="flex flex-col items-center gap-6">
                             {/* Trading Bars Animation */}
