@@ -96,51 +96,45 @@ class HyperliquidAdapter:
             
         return f"{base}/USDT"
 
-    async def fetch_ohlcv(self, symbol: str, timeframe: str, limit: int = 1000) -> pd.DataFrame:
+    def _is_timeframe_supported(self, exchange_id: str, timeframe: str) -> bool:
         """
-        Fetch OHLCV with fallback strategy.
+        Check if exchange supports the timeframe.
+        Coinbase does not support 4h.
         """
-        for eid in self.exchange_ids:
-            exchange = self.exchanges.get(eid)
-            if not exchange: continue
-            
-            try:
-                mapped_symbol = self._map_symbol(eid, symbol)
-                # Ensure timeframe compatibility if needed, but standard ones match
-                
-                # Fetch
-                ohlcv = await exchange.fetch_ohlcv(mapped_symbol, timeframe, limit=limit)
-                
-                if not ohlcv or len(ohlcv) == 0:
-                    continue
+        if exchange_id == 'coinbase' and timeframe == '4h':
+            return False
+        return True
 
-                df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+    async def _fetch_from_exchange(self, eid: str, method: str, symbol: str, *args, **kwargs):
+        """
+        Helper to run a single exchange fetch.
+        """
+        exchange = self.exchanges.get(eid)
+        if not exchange: return None
+
+        # Timeframe Check for OHLCV
+        if method == 'fetch_ohlcv':
+            timeframe = args[0]
+            if not self._is_timeframe_supported(eid, timeframe):
+                return None
+
+        try:
+            mapped_symbol = self._map_symbol(eid, symbol)
+            
+            if method == 'fetch_ohlcv':
+                # limit handled in args/kwargs usually
+                result = await exchange.fetch_ohlcv(mapped_symbol, *args, **kwargs)
+                if not result: return None
+                
+                # Format DataFrame immediately
+                df = pd.DataFrame(result, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
                 df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms', utc=True)
                 df.set_index('timestamp', inplace=True)
                 df.sort_index(inplace=True)
-                
-                logger.info(f"Fetched OHLCV from {eid} for {symbol}")
                 return df
                 
-            except Exception as e:
-                logger.warning(f"Failed to fetch OHLCV from {eid} for {symbol}: {e}")
-                continue
-                
-        logger.error(f"All exchanges failed to fetch OHLCV for {symbol}")
-        return pd.DataFrame()
-
-    async def fetch_current_price(self, symbol: str) -> float:
-        """
-        Fetch live price with fallback strategy.
-        """
-        for eid in self.exchange_ids:
-            exchange = self.exchanges.get(eid)
-            if not exchange: continue
-            
-            try:
-                mapped_symbol = self._map_symbol(eid, symbol)
+            elif method == 'fetch_ticker':
                 ticker = await exchange.fetch_ticker(mapped_symbol)
-                
                 price = None
                 if eid == 'hyperliquid':
                     price = ticker.get('last') or ticker.get('close') or ticker.get('markPrice')
@@ -150,9 +144,68 @@ class HyperliquidAdapter:
                 if price and float(price) > 0:
                     return float(price)
                     
-            except Exception as e:
-                # logger.warning(f"Failed to fetch price from {eid} for {symbol}")
-                continue
-                
-        logger.error(f"All exchanges failed to fetch PRICE for {symbol}")
-        return 0.0
+        except Exception as e:
+            # logger.debug(f"{eid} failed: {e}") 
+            pass
+            
+        return None
+
+    async def fetch_ohlcv(self, symbol: str, timeframe: str, limit: int = 1000) -> pd.DataFrame:
+        """
+        Parallel Race: Fetch from ALL exchanges simultaneously. Return first success.
+        """
+        tasks = []
+        for eid in self.exchange_ids:
+            tasks.append(
+                asyncio.create_task(self._fetch_from_exchange(eid, 'fetch_ohlcv', symbol, timeframe, limit=limit))
+            )
+            
+        try:
+            # Wait for the FIRST one to complete successfully
+            # effectively 'race' but we need to ignore failures until we find a success
+            pending = set(tasks)
+            while pending:
+                done, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
+                for task in done:
+                    try:
+                        result = task.result()
+                        if result is not None and not result.empty:
+                            # We have a winner!
+                            # Cancel others (optional, but good for resources)
+                            for p in pending: p.cancel()
+                            return result
+                    except: pass
+                    
+            logger.error(f"All exchanges failed OHLCV race for {symbol}")
+            return pd.DataFrame()
+            
+        except Exception as e:
+            logger.error(f"Race Error: {e}")
+            return pd.DataFrame()
+
+    async def fetch_current_price(self, symbol: str) -> float:
+        """
+        Parallel Race for Price.
+        """
+        tasks = []
+        for eid in self.exchange_ids:
+            tasks.append(
+                asyncio.create_task(self._fetch_from_exchange(eid, 'fetch_ticker', symbol))
+            )
+
+        try:
+            pending = set(tasks)
+            while pending:
+                done, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
+                for task in done:
+                    try:
+                        result = task.result()
+                        if result is not None and result > 0:
+                            for p in pending: p.cancel()
+                            return result
+                    except: pass
+                    
+            logger.error(f"All exchanges failed Price race for {symbol}")
+            return 0.0
+        except:
+            return 0.0
