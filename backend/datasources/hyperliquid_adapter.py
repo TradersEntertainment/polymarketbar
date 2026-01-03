@@ -19,7 +19,7 @@ class HyperliquidAdapter:
 
     def _init_exchanges(self):
         common_config = {
-            'timeout': 10000,
+            'timeout': 2500, # Fast failover (2.5s) to allow multiple fallbacks within frontend's 15s limit
             'enableRateLimit': True,
         }
         
