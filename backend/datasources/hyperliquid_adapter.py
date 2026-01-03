@@ -7,37 +7,58 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 class HyperliquidAdapter:
+    """
+    Unified Adapter handling Hyperliquid with fallbacks to Coinbase/Kraken/BinanceUS.
+    Name kept as HyperliquidAdapter to prevent import errors in Analyzer.
+    """
     def __init__(self):
-        self.exchange = None
-        self.symbol_map = {
-            'BTC': 'BTC/USDC:USDC',
-            'ETH': 'ETH/USDC:USDC',
-            'SOL': 'SOL/USDC:USDC',
-            'XRP': 'XRP/USDC:USDC',
-            'SUI': 'SUI/USDC:USDC',
-            'AVA': 'AVA/USDC:USDC',
-            # Add others as needed
-        }
-        self._init_exchange()
+        self.exchanges = {}
+        # Priority Order
+        self.exchange_ids = ['hyperliquid', 'coinbase', 'kraken', 'binanceus']
+        self._init_exchanges()
 
-    def _init_exchange(self):
+    def _init_exchanges(self):
+        common_config = {
+            'timeout': 10000,
+            'enableRateLimit': True,
+        }
+        
+        # Hyperliquid (Futures)
         try:
-            self.exchange = ccxt.hyperliquid({
-                'timeout': 10000,
-                'enableRateLimit': True,
-                'options': {'defaultType': 'swap'} 
+            self.exchanges['hyperliquid'] = ccxt.hyperliquid({
+                **common_config,
+                'options': {'defaultType': 'swap'}
             })
-        except Exception as e:
-            logger.error(f"Failed to init Hyperliquid: {e}")
+        except: pass
+        
+        # Coinbase (Spot - reliable US)
+        try:
+            self.exchanges['coinbase'] = ccxt.coinbase(common_config)
+        except: pass
+        
+        # Kraken (Spot)
+        try:
+            self.exchanges['kraken'] = ccxt.kraken(common_config)
+        except: pass
+        
+        # Binance US (Spot)
+        try:
+            self.exchanges['binanceus'] = ccxt.binanceus(common_config)
+        except: pass
+        
+        logger.info(f"Initialized exchanges: {list(self.exchanges.keys())}")
 
     async def close(self):
-        if self.exchange:
-            await self.exchange.close()
+        for name, exchange in self.exchanges.items():
+            try:
+                await exchange.close()
+            except: pass
 
     async def restart(self):
-        logger.info("Restarting Hyperliquid Adapter...")
+        logger.info("Restarting Adapters...")
         await self.close()
-        self._init_exchange()
+        self.exchanges = {}
+        self._init_exchanges()
         
     # --- Compatibility Stubs for CCXTAdapter ---
     async def update_cache(self, *args, **kwargs): pass
@@ -45,56 +66,93 @@ class HyperliquidAdapter:
     def save_cache(self): pass
     # -------------------------------------------
 
+    def _map_symbol(self, exchange_id: str, symbol: str) -> str:
+        """
+        Maps generic 'BTC' to exchange-specific symbol.
+        """
+        base = symbol.split('/')[0] if '/' in symbol else symbol
+        
+        if exchange_id == 'hyperliquid':
+            # Hyperliquid uses USDC:USDC notation often
+            # Mapping common large caps
+            mapping = {
+                'BTC': 'BTC/USDC:USDC', 'ETH': 'ETH/USDC:USDC', 
+                'SOL': 'SOL/USDC:USDC', 'XRP': 'XRP/USDC:USDC',
+                'SUI': 'SUI/USDC:USDC', 'AVA': 'AVA/USDC:USDC'
+            }
+            return mapping.get(base, f"{base}/USDC:USDC")
+            
+        elif exchange_id == 'coinbase':
+            # Coinbase uses BTC/USD
+            return f"{base}/USD"
+            
+        elif exchange_id == 'kraken':
+            # Kraken uses BTC/USD
+            return f"{base}/USD"
+            
+        elif exchange_id == 'binanceus':
+            # BinanceUS uses BTC/USDT or BTC/USD
+            return f"{base}/USDT" # Higher volume usually
+            
+        return f"{base}/USDT"
+
     async def fetch_ohlcv(self, symbol: str, timeframe: str, limit: int = 1000) -> pd.DataFrame:
         """
-        Direct fetch from Hyperliquid.
+        Fetch OHLCV with fallback strategy.
         """
-        if not self.exchange: return pd.DataFrame()
+        for eid in self.exchange_ids:
+            exchange = self.exchanges.get(eid)
+            if not exchange: continue
+            
+            try:
+                mapped_symbol = self._map_symbol(eid, symbol)
+                # Ensure timeframe compatibility if needed, but standard ones match
+                
+                # Fetch
+                ohlcv = await exchange.fetch_ohlcv(mapped_symbol, timeframe, limit=limit)
+                
+                if not ohlcv or len(ohlcv) == 0:
+                    continue
 
-        try:
-            # Map symbol
-            base = symbol.split('/')[0] if '/' in symbol else symbol
-            mapped = self.symbol_map.get(base, f"{base}/USDC:USDC")
-            
-            # Hyperliquid supports standard timeframes usually
-            # If not, we might need basic mapping, but ccxt handles '15m', '1h', '4h', '1d' well.
-            
-            ohlcv = await self.exchange.fetch_ohlcv(mapped, timeframe, limit=limit)
-            
-            if not ohlcv:
-                return pd.DataFrame()
-
-            df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
-            df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms', utc=True)
-            df.set_index('timestamp', inplace=True)
-            df.sort_index(inplace=True)
-            
-            return df
-            
-        except Exception as e:
-            logger.error(f"Hyperliquid OHLCV Error ({symbol} {timeframe}): {e}")
-            return pd.DataFrame()
+                df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+                df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms', utc=True)
+                df.set_index('timestamp', inplace=True)
+                df.sort_index(inplace=True)
+                
+                logger.info(f"Fetched OHLCV from {eid} for {symbol}")
+                return df
+                
+            except Exception as e:
+                logger.warning(f"Failed to fetch OHLCV from {eid} for {symbol}: {e}")
+                continue
+                
+        logger.error(f"All exchanges failed to fetch OHLCV for {symbol}")
+        return pd.DataFrame()
 
     async def fetch_current_price(self, symbol: str) -> float:
         """
-        Fetches live price (fast).
+        Fetch live price with fallback strategy.
         """
-        if not self.exchange: return 0.0
-
-        try:
-            base = symbol.split('/')[0] if '/' in symbol else symbol
-            mapped = self.symbol_map.get(base, f"{base}/USDC:USDC")
+        for eid in self.exchange_ids:
+            exchange = self.exchanges.get(eid)
+            if not exchange: continue
             
-            ticker = await self.exchange.fetch_ticker(mapped)
-            
-            # Priority: last -> close -> mark -> index
-            price = ticker.get('last')
-            if price is None: price = ticker.get('close')
-            if price is None: price = ticker.get('markPrice')
-            if price is None: price = ticker.get('indexPrice')
-            
-            return float(price) if price else 0.0
-            
-        except Exception as e:
-            logger.error(f"Hyperliquid Ticker Error ({symbol}): {e}")
-            return 0.0
+            try:
+                mapped_symbol = self._map_symbol(eid, symbol)
+                ticker = await exchange.fetch_ticker(mapped_symbol)
+                
+                price = None
+                if eid == 'hyperliquid':
+                    price = ticker.get('last') or ticker.get('close') or ticker.get('markPrice')
+                else:
+                    price = ticker.get('last') or ticker.get('close')
+                
+                if price and float(price) > 0:
+                    return float(price)
+                    
+            except Exception as e:
+                # logger.warning(f"Failed to fetch price from {eid} for {symbol}")
+                continue
+                
+        logger.error(f"All exchanges failed to fetch PRICE for {symbol}")
+        return 0.0
