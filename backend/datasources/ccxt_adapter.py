@@ -14,15 +14,17 @@ class CCXTAdapter(DataAdapter):
         # Initialize exchanges in priority order
         # Hyperliquid -> Coinbase Futures -> Coinbase Spot -> Kraken -> Binance (Deprioritized)
         self.exchanges = []
-        try: self.exchanges.append(ccxt.hyperliquid({'timeout': 10000, 'enableRateLimit': True}))
-        except: logger.warning("Hyperliquid not available in this CCXT version")
+        # Patched for Railway IP Block: Prioritize Coinbase -> Kraken -> Binance -> Hyperliquid
         
-        try: self.exchanges.append(ccxt.coinbaseinternational({'timeout': 10000, 'enableRateLimit': True}))
-        except: logger.warning("Coinbase International not available")
+        self.exchanges.append(ccxt.coinbase({'timeout': 5000, 'enableRateLimit': True}))
+        self.exchanges.append(ccxt.kraken({'timeout': 5000, 'enableRateLimit': True}))
+        self.exchanges.append(ccxt.binance({'timeout': 5000, 'enableRateLimit': True}))
         
-        self.exchanges.append(ccxt.coinbase({'timeout': 10000, 'enableRateLimit': True}))
-        self.exchanges.append(ccxt.kraken({'timeout': 10000, 'enableRateLimit': True}))
-        self.exchanges.append(ccxt.binance({'timeout': 10000, 'enableRateLimit': True}))
+        try: self.exchanges.append(ccxt.coinbaseinternational({'timeout': 5000, 'enableRateLimit': True}))
+        except: pass
+
+        try: self.exchanges.append(ccxt.hyperliquid({'timeout': 5000, 'enableRateLimit': True}))
+        except: pass
 
         # Map common symbols to exchange-specific symbols
         self.symbol_map = {
@@ -440,10 +442,8 @@ class CCXTAdapter(DataAdapter):
                     combined = combined[~combined.index.duplicated(keep='last')].sort_index()
                     
                     self.cache[key] = combined
-                    logger.info(f"Backfill complete for {symbol} on {exchange.id}: {len(combined)} candles.")
-                    
                     # Trigger derived updates (4h/1d)
-                    await self._update_derived_cache(symbol)
+                    self._update_derived_cache(symbol)
                     return # Success! Exit function
 
             except Exception as e:
