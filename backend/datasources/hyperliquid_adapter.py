@@ -13,8 +13,8 @@ class HyperliquidAdapter:
     """
     def __init__(self):
         self.exchanges = {}
-        # Priority Order
-        self.exchange_ids = ['hyperliquid', 'coinbase', 'kraken', 'binanceus']
+        # Priority Order: Coinbase First (Speed/Reliability)
+        self.exchange_ids = ['coinbase', 'kraken', 'binanceus', 'hyperliquid']
         self._init_exchanges()
 
     def _init_exchanges(self):
