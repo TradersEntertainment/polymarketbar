@@ -3,12 +3,12 @@ import os
 import pandas as pd
 import numpy as np
 from typing import Dict, List, Optional
-from .datasources.hyperliquid_adapter import HyperliquidAdapter
+from .datasources.ccxt_adapter import CCXTAdapter
 
 class Analyzer:
     def __init__(self):
-        # Use simple Hyperliquid-only adapter
-        self.adapter = HyperliquidAdapter() 
+        # Reverted to CCXTAdapter for stability per user request
+        self.adapter = CCXTAdapter()
         self.HISTORY_FILE = "/data/streak_history.json" if os.path.exists("/data") else "streak_history.json"
         
         # Watchdog logic remains useful for long-running connections

@@ -256,6 +256,16 @@ async def startup_event():
     logger = logging.getLogger(__name__)
     logger.info("Starting up App (Hyperliquid Mode)...")
     
+    # Valid Symbols
+    symbols = ['BTC', 'ETH', 'SOL', 'XRP']
+    
+    # Warmup & Backfill Cache (Restored for CCXTAdapter stability)
+    logger.info("Starting Deep Backfill (180 Days) for major symbols...")
+    for sym in symbols:
+       # We only backfill 1h, others derived
+       if hasattr(analyzer.adapter, 'backfill_history'):
+            asyncio.create_task(analyzer.adapter.backfill_history(sym, '1h', days=180))
+
     # Start background updater
     asyncio.create_task(background_updater())
 
