@@ -23,8 +23,9 @@ class CCXTAdapter(DataAdapter):
         try: self.exchanges.append(ccxt.coinbaseinternational({'timeout': 5000, 'enableRateLimit': True}))
         except: pass
 
-        try: self.exchanges.append(ccxt.hyperliquid({'timeout': 5000, 'enableRateLimit': True}))
-        except: pass
+        # DISABLE HYPERLIQUID COMPLETELY (Causes crashes on Railway due to IP block + CancelledError propagation)
+        # try: self.exchanges.append(ccxt.hyperliquid({'timeout': 5000, 'enableRateLimit': True}))
+        # except: pass
 
         # Map common symbols to exchange-specific symbols
         self.symbol_map = {
