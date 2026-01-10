@@ -88,9 +88,17 @@ class Analyzer:
 
     async def get_stats(self, symbol: str, timeframe: str):
         # Request more data (5000 candles) to ensure accurate streak history
-        df = await self.adapter.fetch_ohlcv(symbol, timeframe, limit=5000)
-        if df.empty:
+        # Use fetch_ohlcv directly but with try/catch logic if adapter doesn't have safe method yet?
+        # We added fetch_ohlcv_safe but let's just use fetch_ohlcv and catch here to be sure.
+        try:
+             df = await self.adapter.fetch_ohlcv(symbol, timeframe, limit=5000)
+        except Exception as e:
+             print(f"Analyzer fetch error: {e}")
+             return None
+
+        if df is None or df.empty:
             return None
+
 
         # -----------------------------
         # --- SYNC WITH LIVE PRICE AND ALIGN TIME ---

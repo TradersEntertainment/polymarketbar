@@ -26,6 +26,11 @@ class CCXTAdapter(DataAdapter):
         # DISABLE HYPERLIQUID COMPLETELY (Causes crashes on Railway due to IP block + CancelledError propagation)
         # try: self.exchanges.append(ccxt.hyperliquid({'timeout': 5000, 'enableRateLimit': True}))
         # except: pass
+        
+        # Ensure at least one exchange, or log warning
+        if not self.exchanges:
+            logger.error("CRITICAL: No exchanges initialized! Check network/requirements.")
+
 
         # Map common symbols to exchange-specific symbols
         self.symbol_map = {
@@ -147,6 +152,17 @@ class CCXTAdapter(DataAdapter):
             return self.cache.get(key, pd.DataFrame())
             
         return data
+
+    async def fetch_ohlcv_safe(self, symbol: str, timeframe: str, limit: int = 1000) -> pd.DataFrame:
+        """
+        Wrapper to catch all errors and return empty DF instead of crashing.
+        """
+        try:
+            return await self.fetch_ohlcv(symbol, timeframe, limit)
+        except Exception as e:
+            logger.error(f"fetch_ohlcv_safe failed for {symbol} {timeframe}: {e}")
+            return pd.DataFrame()
+
 
     def resample_ohlcv(self, df: pd.DataFrame, timeframe: str) -> pd.DataFrame:
         """
@@ -313,10 +329,20 @@ class CCXTAdapter(DataAdapter):
         # logger.info(f"Updated derived cache (4h/1d) for {symbol}")
 
     async def _fetch_aggregated_ohlcv(self, symbol: str, timeframe: str, limit: int, since: Optional[int] = None) -> pd.DataFrame:
+        if not self.exchanges:
+             logger.warning("No exchanges available for fetch.")
+             return pd.DataFrame()
+             
         tasks = [self._fetch_full_ohlcv(ex, symbol, timeframe, limit, since) for ex in self.exchanges]
-        results = await asyncio.gather(*tasks)
+        results = await asyncio.gather(*tasks, return_exceptions=True)
         
-        dfs = [df for df in results if not df.empty]
+        dfs = []
+        for r in results:
+            if isinstance(r, pd.DataFrame) and not r.empty:
+                dfs.append(r)
+            elif isinstance(r, Exception):
+                logger.error(f"One exchange task failed: {r}")
+                
         if not dfs:
             return pd.DataFrame()
 
