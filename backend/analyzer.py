@@ -168,14 +168,15 @@ class Analyzer:
                     
                 elif last_candle_ms < expected_start_ms:
                     # We are STALE (missing current candle) -> Append
-                    # Use live_price for Open/High/Low/Close as best guess
+                    # FIX: Use PREVIOUS CLOSE for Open to avoid "Moving Target" effect.
+                    prev_close = df['close'].iloc[-1]
                     new_ts = pd.Timestamp(expected_start_ms, unit='ms', tz='UTC')
                     
                     # Create dictionary correctly
                     new_row = pd.DataFrame([{
-                        'open': live_price,
-                        'high': live_price,
-                        'low': live_price,
+                        'open': prev_close,
+                        'high': max(prev_close, live_price),
+                        'low': min(prev_close, live_price),
                         'close': live_price,
                         'volume': 0
                     }], index=[new_ts])
