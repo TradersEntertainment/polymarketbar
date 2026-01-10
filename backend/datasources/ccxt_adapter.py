@@ -16,11 +16,15 @@ class CCXTAdapter(DataAdapter):
         self.exchanges = []
         # Patched for Railway IP Block: Prioritize Coinbase -> Kraken -> Binance -> Hyperliquid
         
-        self.exchanges.append(ccxt.coinbase({'timeout': 4000, 'enableRateLimit': True}))
-        self.exchanges.append(ccxt.kraken({'timeout': 4000, 'enableRateLimit': True}))
-        self.exchanges.append(ccxt.binance({'timeout': 4000, 'enableRateLimit': True}))
+        self.exchanges.append(ccxt.coinbase({'timeout': 8000, 'enableRateLimit': True}))
+        self.exchanges.append(ccxt.kraken({'timeout': 8000, 'enableRateLimit': True}))
+        self.exchanges.append(ccxt.binance({'timeout': 8000, 'enableRateLimit': True}))
         
-        try: self.exchanges.append(ccxt.coinbaseinternational({'timeout': 4000, 'enableRateLimit': True}))
+        try: self.exchanges.append(ccxt.coinbaseinternational({'timeout': 8000, 'enableRateLimit': True}))
+        except: pass
+
+        # Re-enable Hyperliquid with robust error handling patch applied below
+        try: self.exchanges.append(ccxt.hyperliquid({'timeout': 8000, 'enableRateLimit': True}))
         except: pass
 
         # DISABLE HYPERLIQUID COMPLETELY (Causes crashes on Railway due to IP block + CancelledError propagation)
@@ -372,8 +376,9 @@ class CCXTAdapter(DataAdapter):
                 else: mapped_symbol = f"{base_currency}/USD"
             
             # logger.info(f"Fetching {mapped_symbol} from {exchange.id} ({timeframe}) since={since}...")
-            # Reduced timeout to 4.0s to ensure we return before client disconnects (Railway/Browser timeout)
-            ohlcv = await asyncio.wait_for(exchange.fetch_ohlcv(mapped_symbol, timeframe, limit=limit, since=since), timeout=4.0)
+            # logger.info(f"Fetching {mapped_symbol} from {exchange.id} ({timeframe}) since={since}...")
+            # Reduced timeout to 8.0s (4s was too aggressive causing empty data returns)
+            ohlcv = await asyncio.wait_for(exchange.fetch_ohlcv(mapped_symbol, timeframe, limit=limit, since=since), timeout=8.0)
             # logger.info(f"Fetched {len(ohlcv)} candles from {exchange.id}")
             
             df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
