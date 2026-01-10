@@ -85,8 +85,9 @@ class CCXTAdapter(DataAdapter):
         self.DATA_DIR = "/data" if os.path.exists("/data") else "." 
         self.CACHE_FILE = os.path.join(self.DATA_DIR, "ohlcv_cache.pkl")
         
-        # Concurrency Lock
-        self.update_lock = asyncio.Lock()
+        # Concurrency Locks (Granular per symbol_timeframe)
+        from collections import defaultdict
+        self.locks = defaultdict(asyncio.Lock)
         
         # Throttling
         self.last_update: Dict[str, float] = {}
@@ -267,8 +268,8 @@ class CCXTAdapter(DataAdapter):
 
         key = f"{symbol}_{timeframe}"
         
-        # Use simple locking to prevent thundering herd
-        async with self.update_lock:
+        # Use granular locking to allow other symbols to update in parallel
+        async with self.locks[key]:
             # Throttling/Cooldown: Don't hit API if updated recently (e.g. 10s)
             import time
             now = time.time()
