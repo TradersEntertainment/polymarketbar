@@ -16,9 +16,18 @@ class CCXTAdapter(DataAdapter):
         self.exchanges = []
         # Patched for Railway IP Block: Prioritize Coinbase -> Kraken -> Binance -> Hyperliquid
         
+        # SINGAPORE MOVE: Prioritize Binance Futures!
+        try:
+             self.exchanges.append(ccxt.binance({
+                 'timeout': 8000, 
+                 'enableRateLimit': True,
+                 'options': {'defaultType': 'future'} 
+             }))
+        except: pass
+
         self.exchanges.append(ccxt.coinbase({'timeout': 8000, 'enableRateLimit': True}))
         self.exchanges.append(ccxt.kraken({'timeout': 8000, 'enableRateLimit': True}))
-        self.exchanges.append(ccxt.binance({'timeout': 8000, 'enableRateLimit': True}))
+        # self.exchanges.append(ccxt.binance({'timeout': 8000, 'enableRateLimit': True})) # Spot (Backup? No, don't duplicate class if possible, or just append as secondary)
         
         try: self.exchanges.append(ccxt.coinbaseinternational({'timeout': 8000, 'enableRateLimit': True}))
         except: pass
