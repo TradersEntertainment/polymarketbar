@@ -16,11 +16,11 @@ class CCXTAdapter(DataAdapter):
         self.exchanges = []
         # Patched for Railway IP Block: Prioritize Coinbase -> Kraken -> Binance -> Hyperliquid
         
-        self.exchanges.append(ccxt.coinbase({'timeout': 5000, 'enableRateLimit': True}))
-        self.exchanges.append(ccxt.kraken({'timeout': 5000, 'enableRateLimit': True}))
-        self.exchanges.append(ccxt.binance({'timeout': 5000, 'enableRateLimit': True}))
+        self.exchanges.append(ccxt.coinbase({'timeout': 4000, 'enableRateLimit': True}))
+        self.exchanges.append(ccxt.kraken({'timeout': 4000, 'enableRateLimit': True}))
+        self.exchanges.append(ccxt.binance({'timeout': 4000, 'enableRateLimit': True}))
         
-        try: self.exchanges.append(ccxt.coinbaseinternational({'timeout': 5000, 'enableRateLimit': True}))
+        try: self.exchanges.append(ccxt.coinbaseinternational({'timeout': 4000, 'enableRateLimit': True}))
         except: pass
 
         # DISABLE HYPERLIQUID COMPLETELY (Causes crashes on Railway due to IP block + CancelledError propagation)
@@ -372,7 +372,8 @@ class CCXTAdapter(DataAdapter):
                 else: mapped_symbol = f"{base_currency}/USD"
             
             # logger.info(f"Fetching {mapped_symbol} from {exchange.id} ({timeframe}) since={since}...")
-            ohlcv = await asyncio.wait_for(exchange.fetch_ohlcv(mapped_symbol, timeframe, limit=limit, since=since), timeout=10.0)
+            # Reduced timeout to 4.0s to ensure we return before client disconnects (Railway/Browser timeout)
+            ohlcv = await asyncio.wait_for(exchange.fetch_ohlcv(mapped_symbol, timeframe, limit=limit, since=since), timeout=4.0)
             # logger.info(f"Fetched {len(ohlcv)} candles from {exchange.id}")
             
             df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
