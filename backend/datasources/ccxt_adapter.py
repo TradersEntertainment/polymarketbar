@@ -287,9 +287,15 @@ class CCXTAdapter(DataAdapter):
                     new_data = await self._fetch_aggregated_ohlcv(symbol, timeframe, limit=100, since=last_ts_val)
                     
                     if new_data.empty:
-                        self.last_update[key] = now  # Mark check as done even if empty
-                        if timeframe == '1h': self._update_derived_cache(symbol)
-                        return
+                        # Recovery: If incremental fetch failed, maybe 'since' is wrong/future?
+                        # Try a standard fetch (latest 100) to verify.
+                        logger.info(f"Incremental fetch empty for {key}. Retrying without 'since'...")
+                        new_data = await self._fetch_aggregated_ohlcv(symbol, timeframe, limit=100, since=None)
+                        
+                        if new_data.empty:
+                            self.last_update[key] = now
+                            if timeframe == '1h': self._update_derived_cache(symbol)
+                            return
 
                     combined = pd.concat([current_df, new_data])
                     combined = combined[~combined.index.duplicated(keep='last')]
