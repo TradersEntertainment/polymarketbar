@@ -347,32 +347,21 @@ class CCXTAdapter(DataAdapter):
              logger.warning("No exchanges available for fetch.")
              return pd.DataFrame()
              
-        tasks = [self._fetch_full_ohlcv(ex, symbol, timeframe, limit, since) for ex in self.exchanges]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-        
-        dfs = []
-        for r in results:
-            if isinstance(r, pd.DataFrame) and not r.empty:
-                dfs.append(r)
-            elif isinstance(r, Exception):
-                logger.error(f"One exchange task failed: {r}")
+        # "Waterfall" Strategy: Try exchanges in order (Binance Futures First)
+        # Return the FIRST valid response immediately. Do NOT aggregate.
+        for exchange in self.exchanges:
+            try:
+                # logger.info(f"Attempting fetch from {exchange.id}...")
+                df = await self._fetch_full_ohlcv(exchange, symbol, timeframe, limit, since)
+                if not df.empty:
+                    # logger.info(f"Successfully fetched from {exchange.id}")
+                    return df
+            except Exception as e:
+                logger.warning(f"Failed to fetch from {exchange.id}: {e}")
+                continue
                 
-        if not dfs:
-            return pd.DataFrame()
-
-        # Concatenate all
-        all_data = pd.concat(dfs)
-        
-        # Group by index (timestamp) and take median
-        aggregated = all_data.groupby(all_data.index).median()
-        
-        if not aggregated.empty:
-            last_close = aggregated['close'].iloc[-1]
-            # logger.info(f"Aggregated {timeframe} candle for {symbol}: {last_close} (from {len(dfs)} exchanges)")
-            if last_close > 250000 and symbol == 'BTC':
-                 logger.error(f"ANOMALY DETECTED: BTC price {last_close} > 250k! Data breakdown: {[d['close'].iloc[-1] for d in dfs]}")
-
-        return aggregated.sort_index()
+        logger.error(f"All exchanges failed for {symbol} {timeframe}")
+        return pd.DataFrame()
 
     async def _fetch_full_ohlcv(self, exchange, symbol: str, timeframe: str, limit: int, since: Optional[int] = None) -> pd.DataFrame:
         try:
