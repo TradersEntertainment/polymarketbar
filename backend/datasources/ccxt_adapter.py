@@ -265,11 +265,11 @@ class CCXTAdapter(DataAdapter):
         
         # Use granular locking to allow other symbols to update in parallel
         async with self.locks[key]:
-            # Throttling/Cooldown: Don't hit API if updated recently (e.g. 10s)
+            # Throttling/Cooldown: Don't hit API if updated recently (e.g. 3s)
             import time
             now = time.time()
             last_ts = self.last_update.get(key, 0)
-            if now - last_ts < 10.0:
+            if now - last_ts < 3.0:
                  # Cache is fresh enough
                  return
 

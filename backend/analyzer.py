@@ -208,6 +208,9 @@ class Analyzer:
         # Fallback: If the very first candle is flat, default to Green (or Red, arbitrary but needed)
         df['color'] = df['color'].fillna('green')
         
+        # DEBUG: Print last color calculation
+        # print(f"Last Candle Color Logic: Open={df['open'].iloc[-1]}, Close={df['close'].iloc[-1]}, Color={df['color'].iloc[-1]}")
+        
         # Calculate streaks
         df['ts'] = df.index
         df['streak_group'] = (df['color'] != df['color'].shift()).cumsum()

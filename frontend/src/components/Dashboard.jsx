@@ -168,7 +168,8 @@ const Dashboard = () => {
         const prefetchTimer = setTimeout(prefetchOthers, 2000);
 
         // 3. Poll current timeframe (Live updates)
-        const interval = setInterval(() => fetchData(timeframe), 15000);
+        // Reduced to 3s to match backend cache and provide "Live" feeling for streaks
+        const interval = setInterval(() => fetchData(timeframe), 3000);
 
         return () => {
             isMounted = false;
