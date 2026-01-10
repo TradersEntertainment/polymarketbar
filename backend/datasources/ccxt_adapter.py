@@ -16,25 +16,19 @@ class CCXTAdapter(DataAdapter):
         self.exchanges = []
         # Patched for Railway IP Block: Prioritize Coinbase -> Kraken -> Binance -> Hyperliquid
         
-        # SINGAPORE MOVE: Prioritize Binance Futures!
+        # SINGAPORE MOVE: STRICT MODE - BINANCE FUTURES ONLY
         try:
              self.exchanges.append(ccxt.binance({
                  'timeout': 8000, 
                  'enableRateLimit': True,
                  'options': {'defaultType': 'future'} 
              }))
-        except: pass
+        except Exception as e:
+            logger.error(f"Failed to init Binance: {e}")
 
-        self.exchanges.append(ccxt.coinbase({'timeout': 8000, 'enableRateLimit': True}))
-        self.exchanges.append(ccxt.kraken({'timeout': 8000, 'enableRateLimit': True}))
-        # self.exchanges.append(ccxt.binance({'timeout': 8000, 'enableRateLimit': True})) # Spot (Backup? No, don't duplicate class if possible, or just append as secondary)
-        
-        try: self.exchanges.append(ccxt.coinbaseinternational({'timeout': 8000, 'enableRateLimit': True}))
-        except: pass
-
-        # Re-enable Hyperliquid with robust error handling patch applied below
-        try: self.exchanges.append(ccxt.hyperliquid({'timeout': 8000, 'enableRateLimit': True}))
-        except: pass
+        # REMOVED ALL FALLBACKS TO PREVENT 504 LATENCY AND DATA MIXING
+        # self.exchanges.append(ccxt.coinbase(...))
+        # self.exchanges.append(ccxt.kraken(...))
 
         # DISABLE HYPERLIQUID COMPLETELY (Causes crashes on Railway due to IP block + CancelledError propagation)
         # try: self.exchanges.append(ccxt.hyperliquid({'timeout': 5000, 'enableRateLimit': True}))
@@ -135,15 +129,16 @@ class CCXTAdapter(DataAdapter):
         
         # Re-init exchanges (Same logic as __init__)
         self.exchanges = []
-        try: self.exchanges.append(ccxt.hyperliquid({'timeout': 10000, 'enableRateLimit': True}))
-        except: pass
-        try: self.exchanges.append(ccxt.coinbaseinternational({'timeout': 10000, 'enableRateLimit': True}))
-        except: pass
-        self.exchanges.append(ccxt.coinbase({'timeout': 10000, 'enableRateLimit': True}))
-        self.exchanges.append(ccxt.kraken({'timeout': 10000, 'enableRateLimit': True}))
-        self.exchanges.append(ccxt.binance({'timeout': 10000, 'enableRateLimit': True}))
-        
-        logger.info("CCXT Adapter restarted successfully.")
+        try:
+             self.exchanges.append(ccxt.binance({
+                 'timeout': 8000, 
+                 'enableRateLimit': True,
+                 'options': {'defaultType': 'future'} 
+             }))
+        except Exception as e:
+            logger.error(f"Failed to re-init Binance: {e}")
+            
+        logger.info("CCXT Adapter restarted successfully (Strict Binance Mode).")
 
     async def fetch_ohlcv(self, symbol: str, timeframe: str, limit: int = 1000) -> pd.DataFrame:
         """
