@@ -63,6 +63,65 @@ async def startup():
     # timeouts=None or reasonable defaults? httpx default is 5s.
     # Let's set a reasonable timeout to avoid hanging indefinitely if Polymarket is down.
     http_client = httpx.AsyncClient(timeout=10.0)
+    
+    # CLEAR STALE CACHE ON STARTUP (Railway Fix)
+    # This ensures each deployment starts with fresh data
+    import time
+    cache_files = [
+        "/data/ohlcv_cache.pkl" if os.path.exists("/data") else "ohlcv_cache.pkl",
+        "/data/streak_history.json" if os.path.exists("/data") else "streak_history.json"
+    ]
+    for cache_file in cache_files:
+        if os.path.exists(cache_file):
+            try:
+                # Check if file is older than 1 hour
+                file_age = time.time() - os.path.getmtime(cache_file)
+                if file_age > 3600:  # 1 hour
+                    os.remove(cache_file)
+                    print(f"[STARTUP] Cleared stale cache: {cache_file} (age: {file_age/3600:.1f}h)")
+            except Exception as e:
+                print(f"[STARTUP] Failed to clear {cache_file}: {e}")
+    
+    # Also clear adapter's in-memory cache
+    if hasattr(analyzer, 'adapter') and hasattr(analyzer.adapter, 'cache'):
+        analyzer.adapter.cache.clear()
+        print("[STARTUP] Cleared in-memory OHLCV cache")
+
+
+# Cache Clear Endpoint (Manual trigger)
+@app.post("/api/clear-cache")
+async def clear_cache():
+    """
+    Emergency cache clear endpoint.
+    Clears all OHLCV cache to force fresh data fetch.
+    """
+    cleared = []
+    
+    # Clear file caches
+    cache_files = [
+        "/data/ohlcv_cache.pkl" if os.path.exists("/data") else "ohlcv_cache.pkl",
+        "/data/streak_history.json" if os.path.exists("/data") else "streak_history.json"
+    ]
+    for cache_file in cache_files:
+        if os.path.exists(cache_file):
+            try:
+                os.remove(cache_file)
+                cleared.append(cache_file)
+            except Exception as e:
+                print(f"Failed to clear {cache_file}: {e}")
+    
+    # Clear in-memory cache
+    if hasattr(analyzer, 'adapter') and hasattr(analyzer.adapter, 'cache'):
+        analyzer.adapter.cache.clear()
+        analyzer.adapter.last_update.clear()
+        cleared.append("in-memory cache")
+    
+    # Clear analyzer history
+    if hasattr(analyzer, 'history'):
+        analyzer.history.clear()
+        cleared.append("streak history")
+    
+    return {"status": "ok", "cleared": cleared}
 
 @app.on_event("shutdown")
 async def shutdown():
