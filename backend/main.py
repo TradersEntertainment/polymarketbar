@@ -86,6 +86,49 @@ async def startup():
     if hasattr(analyzer, 'adapter') and hasattr(analyzer.adapter, 'cache'):
         analyzer.adapter.cache.clear()
         print("[STARTUP] Cleared in-memory OHLCV cache")
+    
+    # Start background cache auto-clear task
+    asyncio.create_task(auto_clear_cache_loop())
+
+
+async def auto_clear_cache_loop():
+    """
+    Background task that periodically clears stale cache.
+    Runs every 15 minutes to prevent cache from getting stuck.
+    """
+    import time
+    
+    CLEAR_INTERVAL = 15 * 60  # 15 minutes
+    MAX_CACHE_AGE = 30 * 60   # 30 minutes - clear if older than this
+    
+    while True:
+        await asyncio.sleep(CLEAR_INTERVAL)
+        
+        try:
+            # Check adapter's last_update timestamps
+            if hasattr(analyzer, 'adapter') and hasattr(analyzer.adapter, 'last_update'):
+                now = time.time()
+                stale_keys = []
+                
+                for key, last_ts in analyzer.adapter.last_update.items():
+                    age = now - last_ts
+                    if age > MAX_CACHE_AGE:
+                        stale_keys.append(key)
+                
+                # Clear stale cache entries
+                if stale_keys:
+                    for key in stale_keys:
+                        if key in analyzer.adapter.cache:
+                            del analyzer.adapter.cache[key]
+                        if key in analyzer.adapter.last_update:
+                            del analyzer.adapter.last_update[key]
+                    
+                    print(f"[AUTO-CLEAR] Cleared {len(stale_keys)} stale cache entries: {stale_keys}")
+                else:
+                    print(f"[AUTO-CLEAR] Cache healthy, no stale entries")
+                    
+        except Exception as e:
+            print(f"[AUTO-CLEAR] Error: {e}")
 
 
 # Cache Clear Endpoint (Manual trigger)
