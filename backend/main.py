@@ -98,8 +98,8 @@ async def auto_clear_cache_loop():
     """
     import time
     
-    CLEAR_INTERVAL = 15 * 60  # 15 minutes
-    MAX_CACHE_AGE = 30 * 60   # 30 minutes - clear if older than this
+    CLEAR_INTERVAL = 60  # 1 minute
+    MAX_CACHE_AGE = 60   # 1 minute - clear if older than this
     
     while True:
         await asyncio.sleep(CLEAR_INTERVAL)
